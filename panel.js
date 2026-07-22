@@ -5580,6 +5580,7 @@ function performansHesapla(){
         toplamAdet: 0,
         toplamOvertimeAdet: 0, // Overtime (16:45 sonrası) döneminde kontrol edilen toplam adet — yalnızca gösterim/rapor amaçlı
         kayitListesi: [],
+        gun2KaliteSet: new Set(), // 2.Kalite kontrolü yapılan GÜNLER (performansı süre değil gün sayısına göre hesaplamak için)
         mesaiSureSn: null
       };
     }
@@ -5668,6 +5669,9 @@ function performansHesapla(){
       kl.toplam2KaliteStandartSure = (kl.toplam2KaliteStandartSure || 0) + standartSure;
       if (kayitFiiliSure && kayitFiiliSure > 0) {
         kl.toplam2KaliteFiiliSure = (kl.toplam2KaliteFiiliSure || 0) + kayitFiiliSure;
+      }
+      if (tarihGecerli && parsedBaslangic) {
+        inspectorMap[ins].gun2KaliteSet.add(parsedBaslangic.toDateString());
       }
     } else {
       // Overtime toggle kontrolü: kapalıysa overtime kayıtları hesaba girmesin
@@ -5846,14 +5850,15 @@ function performansHesapla(){
       : null;
 
     // 2.Kalite kontrollerinin KENDİ performansı — yalnızca gösterim amaçlı.
-    // Genel "Düz. Performans" hesabına dahil EDİLMEZ. ADET BAZLI: Overtime
-    // performansıyla aynı mantık — 2.Kalite kontrollerine harcanan gerçek
-    // süre, günlük hedef adede (450) orantılanıp beklenen adet bulunur,
-    // gerçekte yapılan 2.Kalite adediyle karşılaştırılır.
-    const beklenenAdet2Kalite = toplam2KaliteFiiliSure > 0
-      ? hedefAdetGunluk * (toplam2KaliteFiiliSure / GUNLUK_CALISMA_SANIYE)
+    // Genel "Düz. Performans" hesabına dahil EDİLMEZ. GÜN BAZLI: 2.Kalite
+    // kontrolü yapılan GÜN SAYISI (süre değil — süre bazlı hesap, kısa/
+    // çakışan zaman damgalarında oranı yapay şekilde şişiriyordu), günlük
+    // hedef adede (450) çarpılıp beklenen adet bulunur.
+    const gun2KaliteSayisi = inspectorData.gun2KaliteSet ? inspectorData.gun2KaliteSet.size : 0;
+    const beklenenAdet2Kalite = gun2KaliteSayisi > 0
+      ? hedefAdetGunluk * gun2KaliteSayisi
       : 0;
-    const perf2Kalite = (toplam2KaliteFiiliSure > 0 && beklenenAdet2Kalite > 0)
+    const perf2Kalite = (gun2KaliteSayisi > 0 && beklenenAdet2Kalite > 0)
       ? Math.round((toplam2KaliteAdet / beklenenAdet2Kalite) * 100)
       : null;
 
