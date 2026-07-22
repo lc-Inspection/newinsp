@@ -4936,11 +4936,12 @@ function changePage(d){
 const KL_PER_PAGE = 20; // Grid görünüm için sayfa başı klasman
 
 function renderListe(){
+  const el = document.getElementById('klasman-liste');
+  if (!el) return; // Klasman Yönetimi sayfası kaldırıldı — bu elemanlar artık yok
   const fl = filtered();
   const tp = Math.max(1, Math.ceil(fl.length / KL_PER_PAGE));
   if(sayfa > tp) sayfa = tp;
   const slice = fl.slice((sayfa - 1) * KL_PER_PAGE, sayfa * KL_PER_PAGE);
-  const el = document.getElementById('klasman-liste');
 
   // Tamamlanma sayaçlarını güncelle
   const totalAll   = klasmanlar.filter(k => k.ad.toLowerCase().includes(aramaStr.toLowerCase())).length;
@@ -5020,8 +5021,9 @@ function selectKlasman(id){
 }
 
 function renderEditor(){
-  const k=klasmanlar.find(x=>x.id===secilenId);
   const el=document.getElementById('editor-content');
+  if (!el) return; // Klasman Yönetimi sayfası kaldırıldı — bu eleman artık yok
+  const k=klasmanlar.find(x=>x.id===secilenId);
   if(!k){
     el.innerHTML=`
       <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 24px;text-align:center">
