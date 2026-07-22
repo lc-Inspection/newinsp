@@ -203,28 +203,31 @@ function aoRefreshSheetsData() {
 // ── Stat Kartlar ──
 function _aoRenderStats() {
   var totalAdet  = _aoData.reduce(function(s,k){ return s + k.adet; }, 0);
-  var totalStd   = _aoData.reduce(function(s,k){ return s + k.standartSure; }, 0);
-  var totalFiili = _aoData.reduce(function(s,k){ return s + k.kayitFiiliSure; }, 0);
-  // "Ne ödül ne ceza": nötr kayıp zaman mesai süresinden düşülüp performans
-  // buna göre hesaplanır — Dashboard/getDispPerf ile aynı mantık, aksi halde
-  // bu detay sayfası farklı (eski) bir yüzde gösterir.
-  var standartSnAo = _aoInspector.standartSure || 0;
+  // ADET BAZLI: standart süre yerine adet/beklenen-adet oranı — Dashboard/
+  // getDispPerf ile aynı mantık, aksi halde bu detay sayfası farklı bir
+  // yüzde gösterir. Nötr kayıp zaman da aynı şekilde düşülür.
+  var adetAo = _aoInspector.adet || 0;
   var mesaiSnAo = _aoInspector.mesaiSure || 0;
   var notrKayipSnAo = (typeof getNotrKayipDakikaForInspector === 'function')
     ? getNotrKayipDakikaForInspector(_aoInspector.ins) * 60 : 0;
   if (notrKayipSnAo > 0 && mesaiSnAo > notrKayipSnAo) mesaiSnAo -= notrKayipSnAo;
-  var hamPerf    = (standartSnAo > 0 && mesaiSnAo > 0)
-    ? Math.round((standartSnAo / mesaiSnAo) * 100) : (_aoInspector.genelHizPerf || 0);
+  var hedefAdetGunlukAo = _aoInspector.hedefAdetGunluk || 450;
+  var beklenenAdetAo = mesaiSnAo > 0 ? hedefAdetGunlukAo * (mesaiSnAo / GUNLUK_CALISMA_SANIYE) : 0;
+  var hamPerf    = (adetAo > 0 && beklenenAdetAo > 0)
+    ? Math.round((adetAo / beklenenAdetAo) * 100) : (_aoInspector.genelHizPerf || 0);
   var duzPerf    = Math.round(hamPerf * (100 / _aoHedef));
-  var overtimeDk = Math.round((_aoInspector.toplamMesaistiSaniye || 0) / 60);
+
+  var calismaGunSayisi  = _aoInspector.gunSayisi || 0;
+  var overtimeSn        = _aoInspector.overtimeMesaiSure || 0;
+  var normalCalismaSn   = (_aoInspector.mesaiSure || 0) - overtimeSn;
 
   function perfColor(p){ return p >= 95 ? '#00897B' : p >= 85 ? '#1565C0' : p >= 70 ? '#F57F17' : p >= 50 ? '#EF5350' : '#B71C1C'; }
 
   var cards = [
     ['📦',(translations[currentLang]||translations.tr).stat_total_product,   String(totalAdet), 'var(--navy)'],
-    ['⏱',(translations[currentLang]||translations.tr).std_duration_label,  _aoFmtSn(totalStd), 'var(--navy)'],
-    ['🕐','GERÇEKLEŞEN',   totalFiili > 0 ? _aoFmtSn(totalFiili) : '—', totalFiili > 0 ? '#00897B' : '#5A7FA8'],
-    ['📅','MESAİ SÜRESİ',  _aoFmtSn(_aoInspector.mesaiSure||0) + (overtimeDk > 0 ? ' (+'+overtimeDk+'dk 🌙)' : ''), overtimeDk > 0 ? '#E65100' : 'var(--navy)'],
+    ['🗓️','ÇALIŞMA GÜN SAYISI',  String(calismaGunSayisi), 'var(--navy)'],
+    ['🕐','GERÇEKLEŞEN (NORMAL)',   normalCalismaSn > 0 ? _aoFmtSn(normalCalismaSn) : '—', normalCalismaSn > 0 ? '#00897B' : '#5A7FA8'],
+    ['🌙','MESAİ SÜRESİ (OVERTIME)',  overtimeSn > 0 ? _aoFmtSn(overtimeSn) : '—', overtimeSn > 0 ? '#E65100' : 'var(--navy)'],
     ['📊',(translations[currentLang]||translations.tr).adj_perf_label_upper, duzPerf + '%', perfColor(duzPerf)]
   ];
   document.getElementById('ao-stats-grid').innerHTML = cards.map(function(c){
@@ -348,7 +351,6 @@ function aoApplyFilters() {
   var gruplar = {};
   list.forEach(function(k){ if (!gruplar[k.klasman]) gruplar[k.klasman] = []; gruplar[k.klasman].push(k); });
 
-  var _aoHedefAdetGunluk = (_aoInspector && _aoInspector.hedefAdetGunluk) || 450;
 
   var html = '', idx = 0;
   Object.keys(gruplar).forEach(function(kAd) {
@@ -357,7 +359,7 @@ function aoApplyFilters() {
     var gFiili = kayitlar.reduce(function(s,k){ return s+k.kayitFiiliSure; }, 0);
     var gOrt   = gAdet > 0 && gFiili > 0 ? Math.round(gFiili / gAdet) : null;
 
-    html += '<tr style="background:#0B1F3A;color:#fff;"><td colspan="11" style="padding:8px 14px;font-size:12px;font-weight:700;">'
+    html += '<tr style="background:#0B1F3A;color:#fff;"><td colspan="9" style="padding:8px 14px;font-size:12px;font-weight:700;">'
       + '📦 ' + kAd + ' <span style="font-weight:400;opacity:.7;font-size:11px;">'
       + kayitlar.length + ' ' + (translations[currentLang]||translations.tr).records_word + ' · ' + gAdet + ' ' + (translations[currentLang]||translations.tr).units_short
       + (gFiili > 0 ? ' · ' + _aoFmtSn(gFiili) + ' gerçekleşen' : '')
@@ -366,15 +368,6 @@ function aoApplyFilters() {
 
     kayitlar.forEach(function(k, i) {
       idx++;
-      // ADET BAZLI ORAN: bu kaydın gerçek süresine orantılanmış beklenen adet
-      // (günlük hedef × süre oranı), tıpkı genel performans formülündeki mantık.
-      var beklenenAdetK = k.kayitFiiliSure > 0 ? _aoHedefAdetGunluk * (k.kayitFiiliSure / GUNLUK_CALISMA_SANIYE) : 0;
-      var oran = (k.adet > 0 && beklenenAdetK > 0) ? Math.round((k.adet / beklenenAdetK) * 100) : null;
-      // Gerçekleşen süre ≤10dk (600sn) ve oran %100'ün üstündeyse tavanla —
-      // çok kısa kayıtlarda yapay şişmiş oranları göstermemek için.
-      if (oran !== null && k.kayitFiiliSure <= 600 && k.adet > beklenenAdetK) oran = Math.min(oran, 100);
-      // 15 adet ve altında da aynı tavanlama uygulanır.
-      if (oran !== null && k.adet <= 15 && k.adet > beklenenAdetK) oran = Math.min(oran, 100);
       var ortSn   = k.ortalamaKontrolSn;
       var ortColor = ortSn === null ? '#5A7FA8' : (k.kontrolAdetSuresi <= 0 || ortSn <= k.kontrolAdetSuresi) ? '#00897B' : ortSn <= k.kontrolAdetSuresi * 1.2 ? '#F57F17' : '#C62828';
       var bg = i % 2 === 0 ? '#F9FBFF' : '#fff';
@@ -383,23 +376,19 @@ function aoApplyFilters() {
         + '<td style="font-size:11px;color:#5A7FA8;font-family:monospace;text-align:center;">' + (k.talepNo || '—') + '</td>'
         + '<td style="font-weight:600;color:#0B1F3A;">' + k.klasman + '</td>'
         + '<td style="font-weight:700;font-size:14px;text-align:center;">' + k.adet + '</td>'
-        + '<td style="color:#1565C0;font-family:monospace;text-align:center;">' + k.kontrolAdetSuresi + 'sn</td>'
         + '<td style="font-family:monospace;color:' + (k.kayitFiiliSure > 0 ? '#00897B' : '#5A7FA8') + ';text-align:right;">' + (k.kayitFiiliSure > 0 ? _aoFmtSn(k.kayitFiiliSure) : (k.tarihGecerli ? _aoFmtSn(0) : '—')) + '</td>'
         + '<td style="font-family:monospace;font-weight:700;color:' + ortColor + ';text-align:center;">'
           + (ortSn !== null ? ortSn + 'sn<div style="font-size:9px;font-weight:400;">' + (k.kontrolAdetSuresi <= 0 ? '✓ kayıt var' : ortSn <= k.kontrolAdetSuresi ? '✓ hedef' : '↑ hedefin üstü') + '</div>' : (k.tarihGecerli === false ? '—<div style="font-size:9px;color:#5A7FA8;">tarih yok</div>' : '—<div style="font-size:9px;color:#5A7FA8;">süre hesaplanamadı</div>'))
           + '</td>'
         + '<td style="font-size:11px;color:#5A7FA8;text-align:center;">' + (k.tarihGecerli && k.baslangic ? _aoFmtTarih(k.baslangic) : '—') + '</td>'
         + '<td style="font-size:11px;color:#5A7FA8;text-align:center;">' + (k.tarihGecerli && k.bitis ? _aoFmtTarih(k.bitis) : '—') + '</td>'
-        + '<td style="font-family:monospace;font-weight:700;text-align:center;">'
-          + (oran !== null ? '<span style="color:' + _aoPerfClass(oran) + ';">' + oran + '%</span><div style="font-size:9px;font-weight:400;color:' + _aoPerfClass(oran) + ';">' + (oran >= 100 ? '✓ ' + (translations[currentLang]||translations.tr).on_target : '↓ ' + (translations[currentLang]||translations.tr).below_target) + '</div>' : '<span style="color:#5A7FA8;">—</span>')
-          + '</td>'
         + '<td style="font-size:9px;color:' + (k.is2Kalite ? '#7C3AED;font-weight:700;' : '#A9BBD0;') + 'text-align:center;white-space:nowrap;">' + (k.inspectionTipi ? (k.is2Kalite ? '🏷️ ' : '') + k.inspectionTipi : '—') + '</td>'
         + '</tr>';
     });
   });
 
   var _noRec = (translations[currentLang]||translations.tr).no_records_found;
-  document.getElementById('ao-tablo-body').innerHTML = html || '<tr><td colspan="11" style="padding:24px;text-align:center;color:#5A7FA8;">' + _noRec + '</td></tr>';
+  document.getElementById('ao-tablo-body').innerHTML = html || '<tr><td colspan="9" style="padding:24px;text-align:center;color:#5A7FA8;">' + _noRec + '</td></tr>';
 }
 
 function aoResetFilters() {
@@ -1011,10 +1000,10 @@ function _renderGunlukTablo() {
     var tarihStr = g.tarih.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', weekday: 'short' });
     return '<tr style="border-bottom:1px solid #f3f4f6;">'
       + '<td style="padding:8px 10px;font-size:12px;color:#111827;font-weight:500;">' + tarihStr + '</td>'
-      + '<td style="padding:8px 10px;text-align:center;font-size:13px;font-weight:600;color:#111827;">' + Math.round(g.toplamAdet) + '</td>'
       + '<td style="padding:8px 10px;text-align:center;font-size:12px;color:#1d4ed8;">' + Math.round(g.normalAdet) + '</td>'
       + '<td style="padding:8px 10px;text-align:center;font-size:12px;color:#D85A30;font-weight:600;">' + Math.round(g.otAdet) + '</td>'
       + '<td style="padding:8px 10px;text-align:center;font-size:12px;color:' + (g.otSureDk > 0 ? '#D85A30' : '#9ca3af') + ';font-weight:' + (g.otSureDk > 0 ? '600' : '400') + ';">' + fmtSaat(g.otSureDk) + '</td>'
+      + '<td style="padding:8px 10px;text-align:center;font-size:13px;font-weight:600;color:#111827;">' + Math.round(g.toplamAdet) + '</td>'
       + '</tr>';
   }).join('');
 
@@ -1023,10 +1012,10 @@ function _renderGunlukTablo() {
 
   rows += '<tr style="background:#f1f5f9;border-top:2px solid #e5e7eb;">'
     + '<td style="padding:8px 10px;font-size:12px;font-weight:700;color:#111827;">TOPLAM</td>'
-    + '<td style="padding:8px 10px;text-align:center;font-size:13px;font-weight:700;color:#111827;">' + Math.round(tAdet) + '</td>'
     + '<td style="padding:8px 10px;text-align:center;font-size:12px;font-weight:700;color:#1d4ed8;">' + Math.round(tNormal) + '</td>'
     + '<td style="padding:8px 10px;text-align:center;font-size:12px;font-weight:700;color:#D85A30;">' + Math.round(tOt) + '</td>'
     + '<td style="padding:8px 10px;text-align:center;font-size:12px;font-weight:700;color:#D85A30;">' + fmtSaat(tOtDk) + '</td>'
+    + '<td style="padding:8px 10px;text-align:center;font-size:13px;font-weight:700;color:#111827;">' + Math.round(tAdet) + '</td>'
     + '</tr>';
 
   tbody.innerHTML = rows;
