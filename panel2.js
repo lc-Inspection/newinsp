@@ -342,38 +342,39 @@ function aoApplyFilters() {
   else if (sf === 'tarih-asc') list.sort(function(a,b){ return new Date(a.baslangic||0)-new Date(b.baslangic||0); });
 
   var fAdet = list.reduce(function(s,k){ return s+k.adet; }, 0);
-  var fStd  = list.reduce(function(s,k){ return s+(k.standartSureHam != null ? k.standartSureHam : k.standartSure); }, 0);
-  document.getElementById('ao-f-summary').textContent = list.length + ' ' + (translations[currentLang]||translations.tr).records_summary + fAdet + ' ' + (translations[currentLang]||translations.tr).units_summary + _aoFmtSn(fStd);
+  document.getElementById('ao-f-summary').textContent = list.length + ' ' + (translations[currentLang]||translations.tr).records_summary + fAdet + ' ' + (translations[currentLang]||translations.tr).units_summary;
 
   // Gruplama
   var gruplar = {};
   list.forEach(function(k){ if (!gruplar[k.klasman]) gruplar[k.klasman] = []; gruplar[k.klasman].push(k); });
 
+  var _aoHedefAdetGunluk = (_aoInspector && _aoInspector.hedefAdetGunluk) || 450;
+
   var html = '', idx = 0;
   Object.keys(gruplar).forEach(function(kAd) {
     var kayitlar = gruplar[kAd];
     var gAdet  = kayitlar.reduce(function(s,k){ return s+k.adet; }, 0);
-    var gStd   = kayitlar.reduce(function(s,k){ return s+(k.standartSureHam != null ? k.standartSureHam : k.standartSure); }, 0);
     var gFiili = kayitlar.reduce(function(s,k){ return s+k.kayitFiiliSure; }, 0);
     var gOrt   = gAdet > 0 && gFiili > 0 ? Math.round(gFiili / gAdet) : null;
 
-    html += '<tr style="background:#0B1F3A;color:#fff;"><td colspan="12" style="padding:8px 14px;font-size:12px;font-weight:700;">'
+    html += '<tr style="background:#0B1F3A;color:#fff;"><td colspan="11" style="padding:8px 14px;font-size:12px;font-weight:700;">'
       + '📦 ' + kAd + ' <span style="font-weight:400;opacity:.7;font-size:11px;">'
-      + kayitlar.length + ' ' + (translations[currentLang]||translations.tr).records_word + ' · ' + gAdet + ' ' + (translations[currentLang]||translations.tr).units_short + ' · ' + _aoFmtSn(gStd)
+      + kayitlar.length + ' ' + (translations[currentLang]||translations.tr).records_word + ' · ' + gAdet + ' ' + (translations[currentLang]||translations.tr).units_short
       + (gFiili > 0 ? ' · ' + _aoFmtSn(gFiili) + ' gerçekleşen' : '')
       + (gOrt ? ' · <strong style="color:#FFD700">ort. ' + gOrt + 'sn/adet</strong>' : '')
       + '</span></td></tr>';
 
     kayitlar.forEach(function(k, i) {
       idx++;
-      var oran    = k.kayitFiiliSure && k.standartSure ? Math.round((k.standartSure / k.kayitFiiliSure) * 100) : null;
-      // Gerçekleşen süre ≤ 10dk (600sn) ise oran maksimum %100 (genel performansı
-      // yapay şişiren aşırı yüksek oranlar gösterilmez — hesaplama sistemi değişmez,
-      // sadece gösterim tavanlanır; standartSure zaten kaynak tarafında aynı kuralla
-      // tavanlanmış olduğundan burada zaten ~100 çıkar, bu satır ek güvenlik amaçlıdır)
-      if (oran !== null && k.kayitFiiliSure <= 600 && k.kayitFiiliSure < k.standartSure) oran = Math.min(oran, 100);
-      // 15 adet ve altında gerçekleşen < standart ise oran maksimum %100
-      if (oran !== null && k.adet <= 15 && k.kayitFiiliSure < k.standartSure) oran = Math.min(oran, 100);
+      // ADET BAZLI ORAN: bu kaydın gerçek süresine orantılanmış beklenen adet
+      // (günlük hedef × süre oranı), tıpkı genel performans formülündeki mantık.
+      var beklenenAdetK = k.kayitFiiliSure > 0 ? _aoHedefAdetGunluk * (k.kayitFiiliSure / GUNLUK_CALISMA_SANIYE) : 0;
+      var oran = (k.adet > 0 && beklenenAdetK > 0) ? Math.round((k.adet / beklenenAdetK) * 100) : null;
+      // Gerçekleşen süre ≤10dk (600sn) ve oran %100'ün üstündeyse tavanla —
+      // çok kısa kayıtlarda yapay şişmiş oranları göstermemek için.
+      if (oran !== null && k.kayitFiiliSure <= 600 && k.adet > beklenenAdetK) oran = Math.min(oran, 100);
+      // 15 adet ve altında da aynı tavanlama uygulanır.
+      if (oran !== null && k.adet <= 15 && k.adet > beklenenAdetK) oran = Math.min(oran, 100);
       var ortSn   = k.ortalamaKontrolSn;
       var ortColor = ortSn === null ? '#5A7FA8' : (k.kontrolAdetSuresi <= 0 || ortSn <= k.kontrolAdetSuresi) ? '#00897B' : ortSn <= k.kontrolAdetSuresi * 1.2 ? '#F57F17' : '#C62828';
       var bg = i % 2 === 0 ? '#F9FBFF' : '#fff';
@@ -383,10 +384,6 @@ function aoApplyFilters() {
         + '<td style="font-weight:600;color:#0B1F3A;">' + k.klasman + '</td>'
         + '<td style="font-weight:700;font-size:14px;text-align:center;">' + k.adet + '</td>'
         + '<td style="color:#1565C0;font-family:monospace;text-align:center;">' + k.kontrolAdetSuresi + 'sn</td>'
-        + '<td style="text-align:right;font-family:monospace;"><span style="color:#1565C0;">' + _aoFmtSn(k.standartSureHam != null ? k.standartSureHam : k.standartSure) + '</span>'
-          + ((k.standartSureHam != null && Math.round(k.standartSureHam) !== Math.round(k.standartSure))
-              ? '<div style="font-size:10px;color:#E65100;font-weight:600;">⚠ kısa kayıt tavanı: ' + _aoFmtSn(k.standartSure) + '</div>'
-              : '') + '</td>'
         + '<td style="font-family:monospace;color:' + (k.kayitFiiliSure > 0 ? '#00897B' : '#5A7FA8') + ';text-align:right;">' + (k.kayitFiiliSure > 0 ? _aoFmtSn(k.kayitFiiliSure) : (k.tarihGecerli ? _aoFmtSn(0) : '—')) + '</td>'
         + '<td style="font-family:monospace;font-weight:700;color:' + ortColor + ';text-align:center;">'
           + (ortSn !== null ? ortSn + 'sn<div style="font-size:9px;font-weight:400;">' + (k.kontrolAdetSuresi <= 0 ? '✓ kayıt var' : ortSn <= k.kontrolAdetSuresi ? '✓ hedef' : '↑ hedefin üstü') + '</div>' : (k.tarihGecerli === false ? '—<div style="font-size:9px;color:#5A7FA8;">tarih yok</div>' : '—<div style="font-size:9px;color:#5A7FA8;">süre hesaplanamadı</div>'))
@@ -402,7 +399,7 @@ function aoApplyFilters() {
   });
 
   var _noRec = (translations[currentLang]||translations.tr).no_records_found;
-  document.getElementById('ao-tablo-body').innerHTML = html || '<tr><td colspan="12" style="padding:24px;text-align:center;color:#5A7FA8;">' + _noRec + '</td></tr>';
+  document.getElementById('ao-tablo-body').innerHTML = html || '<tr><td colspan="11" style="padding:24px;text-align:center;color:#5A7FA8;">' + _noRec + '</td></tr>';
 }
 
 function aoResetFilters() {
