@@ -3365,7 +3365,8 @@ function updateSidebar(){
   const inspCount = performansData.length;
   document.getElementById('klasman-badge').textContent = n+' '+(translations[currentLang]||translations.tr).klasman_word;
   document.getElementById('inspector-badge').textContent = inspCount+' inspector';
-  document.getElementById('nav-kl-count').textContent = n;
+  const navKlCount = document.getElementById('nav-kl-count');
+  if (navKlCount) navKlCount.textContent = n;
   document.getElementById('nav-dashboard-count').textContent = inspCount;
   document.getElementById('sb-klasman-total').textContent = n;
   document.getElementById('sb-inspector-total').textContent = inspCount;
@@ -7380,7 +7381,8 @@ document.addEventListener('keydown', function(e) {
     }
   }
   
-  if (e.ctrlKey && e.key === 'n' && document.getElementById('page-klasmanlar').classList.contains('active')) {
+  const _pageKlasmanlarEl = document.getElementById('page-klasmanlar');
+  if (e.ctrlKey && e.key === 'n' && _pageKlasmanlarEl && _pageKlasmanlarEl.classList.contains('active')) {
     e.preventDefault();
     openModal();
   }
