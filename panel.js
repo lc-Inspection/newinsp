@@ -1578,6 +1578,14 @@ const listeTemiz = liste.map(inspector => {
       kayitFiiliSure: v.kayitFiiliSure, hizPerf: v.hizPerf, hacimPerf: v.hacimPerf
     };
   });
+  // Dashboard kartındaki "Günlük Ort. (Normal Saatte)" / "Günlük Ort. (Toplam)"
+  // değerleriyle BİREBİR aynı formül — Sheets'e ayrıca gönderiliyor ki Apps
+  // Script tarafında tahmine/fallback'e gerek kalmasın, tam olarak karta
+  // yansıyan sayı çekilsin.
+  const _gunSayisiPush  = inspector.gunSayisi || 0;
+  const _normalAdetPush = (inspector.adet || 0) - (inspector.toplamOvertimeAdet || 0);
+  const gunlukOrtNormal = _gunSayisiPush > 0 ? Math.round(_normalAdetPush / _gunSayisiPush) : 0;
+  const gunlukOrtToplam = _gunSayisiPush > 0 ? Math.round((inspector.adet || 0) / _gunSayisiPush) : 0;
   return {
     ...inspector,
     klasmanlar: klasmanlarTemiz,
@@ -1587,7 +1595,9 @@ const listeTemiz = liste.map(inspector => {
     verimlilikPerf: inspector.genelHizPerf != null ? Math.round(inspector.genelHizPerf * (100 / _pushHedef)) : inspector.verimlilikPerf,
     orneklemeMod: _pushOrneklemeMod,
     orneklemeTarihliAktif: _pushOrneklemeTarihliAktif,
-    orneklemeDonemleri: _pushOrneklemeTarihliAktif ? orneklemeDonemleri : []
+    orneklemeDonemleri: _pushOrneklemeTarihliAktif ? orneklemeDonemleri : [],
+    gunlukOrtNormal: gunlukOrtNormal,
+    gunlukOrtToplam: gunlukOrtToplam
   };
 });
 
