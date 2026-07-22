@@ -3545,6 +3545,12 @@ function renderInspectorCards() {
         }).join(', ') + (inspector.gunlukDetay.length > 3 ? '...' : '')
       : '—';
 
+    // Günlük adet ortalamaları: normal saatte (overtime hariç) ve toplam
+    const _gunSayisiC   = inspector.gunSayisi || 0;
+    const _normalAdetC  = (inspector.adet || 0) - (inspector.toplamOvertimeAdet || 0);
+    const _gunlukOrtNormal = _gunSayisiC > 0 ? Math.round(_normalAdetC / _gunSayisiC) : 0;
+    const _gunlukOrtToplam = _gunSayisiC > 0 ? Math.round((inspector.adet || 0) / _gunSayisiC) : 0;
+
     return `
       <div class="inspector-card ${performansClass}">
         <!-- Header -->
@@ -3592,6 +3598,18 @@ function renderInspectorCards() {
           <div class="inspector-stat">
             <div class="inspector-stat-value" style="${inspector.toplamMesaistiSaniye > 0 ? 'color:#E65100' : ''}">${inspector.toplamMesaistiSaniye > 0 ? fmtSnKisa(inspector.toplamMesaistiSaniye) : '—'}</div>
             <div class="inspector-stat-label"><span data-i18n="overtime_duration">Overtime Süresi</span></div>
+          </div>
+        </div>
+
+        <!-- Günlük Adet Ortalaması -->
+        <div class="inspector-stats">
+          <div class="inspector-stat">
+            <div class="inspector-stat-value">${formatTR(_gunlukOrtNormal)}</div>
+            <div class="inspector-stat-label">Günlük Ort. (Normal Saatte)</div>
+          </div>
+          <div class="inspector-stat">
+            <div class="inspector-stat-value">${formatTR(_gunlukOrtToplam)}</div>
+            <div class="inspector-stat-label">Günlük Ort. (Toplam)</div>
           </div>
         </div>
 
