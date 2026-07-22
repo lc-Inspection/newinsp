@@ -105,10 +105,6 @@
     </div>
 
     <div class="sb-label" data-i18n="nav_analysis">Analiz</div>
-    <div class="nav-item" onclick="showPage('klasman-analiz')">
-  <span class="nav-icon">🎯</span>
-  <span data-i18n="nav_klasman_analysis">Klasman Analizi</span>
-</div>
     <div class="nav-item" onclick="showPage('performans')">
       <span class="nav-icon">📈</span>
       <span data-i18n="nav_perf_analysis">Performans Analizi</span>
@@ -333,30 +329,6 @@
       </div>
     </div>
 
-<!-- ══════════ KLASMAN ANALİZİ ══════════ -->
-<div id="page-klasman-analiz" class="page">
-  <div class="ph">
-    <div class="ph-left">
-      <h1 data-i18n="klasman_analiz_title">🎯 Klasmana Göre Gerçekleşen Süre Analizi</h1>
-      <p data-i18n="klasman_analiz_sub">Klasman bazında standart ve gerçekleşen birim muayene sürelerini karşılaştırın</p>
-    </div>
-<div class="ph-buttons">
-      <button class="btn" onclick="pullKlasmanAnalizFromSheets()" id="kla-pull-btn">
-        📥 Sheets'ten Çek
-      </button>
-      <button class="btn btn-primary" onclick="pushAndRenderKlasmanAnaliz()" id="kla-push-btn">
-        📤 Sheets'e Gönder & Yenile
-      </button>
-    </div>
-  </div>
-  <div id="klasman-analiz-icerik">
-    <div class="empty">
-      <div class="empty-icon">🎯</div>
-      <h3 data-i18n="waiting_data">Veri bekleniyor</h3>
-      <p data-i18n="waiting_data_sub">Performans analizi çalıştırıldıktan sonra burası otomatik dolacak</p>
-    </div>
-  </div>
-</div>
 <!-- ══════════ EKİBİM ANALİZİ ══════════ -->
 <div id="page-ekip-analiz" class="page">
   <div class="ph">
@@ -1456,10 +1428,10 @@
         <thead style="position:sticky;top:0;z-index:5;">
           <tr style="background:#eef2f7;">
             <th style="padding:8px 10px;text-align:left;font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Tarih</th>
-            <th style="padding:8px 10px;text-align:center;font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Toplam Adet</th>
             <th style="padding:8px 10px;text-align:center;font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Normal Saatte</th>
             <th style="padding:8px 10px;text-align:center;font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Overtime'da</th>
             <th style="padding:8px 10px;text-align:center;font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">OT Süresi</th>
+            <th style="padding:8px 10px;text-align:center;font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.4px;">Toplam Adet</th>
           </tr>
         </thead>
         <tbody id="gunluk-tablo-body"></tbody>
@@ -1703,12 +1675,10 @@
               <th style="padding:10px 12px;text-align:left;font-size:11px;">Talep No</th>
               <th style="padding:10px 12px;text-align:left;font-size:11px;">Klasman</th>
               <th style="padding:10px 12px;text-align:center;font-size:11px;">Kontrol Edilen<br>Miktar</th>
-              <th style="padding:10px 12px;text-align:center;font-size:11px;">Kontrol Süresi<br><span style="opacity:.6;font-weight:400">(sn/adet)</span></th>
               <th style="padding:10px 12px;text-align:right;font-size:11px;" data-i18n="actual_duration_th">Gerçekleşen Süre</th>
               <th style="padding:10px 12px;text-align:center;font-size:11px;">Ort. Kontrol<br><span style="opacity:.6;font-weight:400">(sn/adet)</span></th>
               <th style="padding:10px 12px;text-align:center;font-size:11px;" data-i18n="start_date_th">Başlangıç</th>
               <th style="padding:10px 12px;text-align:center;font-size:11px;" data-i18n="end_date_th">Bitiş</th>
-              <th style="padding:10px 12px;text-align:center;font-size:11px;">Oran<br><span style="opacity:.6;font-weight:400">(Adet Bazlı)</span></th>
               <th style="padding:10px 12px;text-align:center;font-size:10px;opacity:.75;font-weight:400;">Inspection Tipi</th>
             </tr>
           </thead>
@@ -1723,7 +1693,6 @@
       Kontrol Edilen Miktar = seviyelendirme/örnekleme sonrası fiilen kontrol edilen adet &nbsp;|&nbsp;
       Gerçekleşen = Başlangıç–Bitiş farkı &nbsp;|&nbsp;
       Ort. Kontrol = Gerçekleşen ÷ Miktar &nbsp;|&nbsp;
-      Oran (Adet Bazlı) = Kontrol Edilen Miktar ÷ (Günlük Hedef Adet × Süre Oranı) × 100 &nbsp;|&nbsp;
       <span style="color:#00897B;">✓ hedef</span> = Ort. ≤ Standart kontrol süresi
     </div>
 
