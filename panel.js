@@ -5715,32 +5715,77 @@ function renderPerfTabloFromData(page) {
 // ÖRNEKLEME TABLOSU
 // ════════════════════════════════════════════════════════════════════════════════
 
-// Bir Alttan tablosu: =EĞER(R<=20;R; EĞER(R<=32;20; EĞER(R<=50;20; EĞER(R<=80;32; EĞER(R<=125;50;80)))))
-// Bir Alttan örnekleme tablosu
-// BakilacakMiktar aralığı → kontrol edilecek adet
-// ≤13→13, ≤20→20, ≤32→32, ≤50→32, ≤80→50, ≤125→80, ≤200→125, >200→200
+// Bir Alttan / İki Alttan örnekleme tabloları — kullanıcının verdiği referans
+// tabloyla (2,3,5,8,13,20,32,50,80,125,200,315,500,800,...standart AQL dizisi)
+// birebir uyumlu, çok büyük partilere (yüz binler/milyonlar) kadar uzatılmış
+// hali. ÖNEMLİ DÜZELTME: eski tablo 200 adette kesiliyordu, 200 üstü HER
+// parti (1000 de olsa 50.000 de olsa) sabit 125/200'e yapışıp kalıyordu —
+// bu satır bu ciddi hatayı düzeltir. Ayrıca küçük partilerde (≤32) referans
+// tabloyla tam örtüşmesi için birkaç basamak da düzeltildi.
 const ORNEKLEME_BIR = [
-  { max: 13,       val: 13  },
-  { max: 20,       val: 20  },
-  { max: 32,       val: 32  },
-  { max: 50,       val: 32  },
-  { max: 80,       val: 50  },
-  { max: 125,      val: 80  },
-  { max: 200,      val: 125 },
-  { max: Infinity, val: 200 }
+  { max: 2,        val: 2    },
+  { max: 3,        val: 3    },
+  { max: 5,        val: 5    },
+  { max: 8,        val: 8    },
+  { max: 13,       val: 13   },
+  { max: 20,       val: 20   },
+  { max: 32,       val: 20   },
+  { max: 50,       val: 32   },
+  { max: 80,       val: 50   },
+  { max: 125,      val: 80   },
+  { max: 200,      val: 125  },
+  { max: 315,      val: 200  },
+  { max: 500,      val: 315  },
+  { max: 800,      val: 500  },
+  { max: 1250,     val: 800  },
+  { max: 2000,     val: 1250 },
+  { max: 3150,     val: 2000 },
+  { max: 5000,     val: 3150 },
+  { max: 8000,     val: 5000 },
+  { max: 12500,    val: 8000 },
+  { max: 20000,    val: 12500 },
+  { max: 31500,    val: 20000 },
+  { max: 50000,    val: 31500 },
+  { max: 80000,    val: 50000 },
+  { max: 125000,   val: 80000 },
+  { max: 200000,   val: 125000 },
+  { max: 315000,   val: 200000 },
+  { max: 500000,   val: 315000 },
+  { max: 800000,   val: 500000 },
+  { max: Infinity, val: 800000 }
 ];
 
-// İki Alttan örnekleme tablosu
-// ≤13→13, ≤20→20, ≤32→32, ≤50→32, ≤80→32, ≤125→50, ≤200→80, >200→125
 const ORNEKLEME_IKI = [
-  { max: 13,       val: 13  },
-  { max: 20,       val: 20  },
-  { max: 32,       val: 32  },
-  { max: 50,       val: 32  },
-  { max: 80,       val: 32  },
-  { max: 125,      val: 50  },
-  { max: 200,      val: 80  },
-  { max: Infinity, val: 125 }
+  { max: 2,        val: 2    },
+  { max: 3,        val: 3    },
+  { max: 5,        val: 5    },
+  { max: 8,        val: 8    },
+  { max: 13,       val: 13   },
+  { max: 20,       val: 20   },
+  { max: 32,       val: 20   },
+  { max: 50,       val: 20   },
+  { max: 80,       val: 32   },
+  { max: 125,      val: 50   },
+  { max: 200,      val: 80   },
+  { max: 315,      val: 125  },
+  { max: 500,      val: 200  },
+  { max: 800,      val: 315  },
+  { max: 1250,     val: 500  },
+  { max: 2000,     val: 800  },
+  { max: 3150,     val: 1250 },
+  { max: 5000,     val: 2000 },
+  { max: 8000,     val: 3150 },
+  { max: 12500,    val: 5000 },
+  { max: 20000,    val: 8000 },
+  { max: 31500,    val: 12500 },
+  { max: 50000,    val: 20000 },
+  { max: 80000,    val: 31500 },
+  { max: 125000,   val: 50000 },
+  { max: 200000,   val: 80000 },
+  { max: 315000,   val: 125000 },
+  { max: 500000,   val: 200000 },
+  { max: 800000,   val: 315000 },
+  { max: Infinity, val: 500000 }
 ];
 
 function orneklemeAdet(adet, mod) {
@@ -6068,7 +6113,7 @@ function performansHesapla(){
   });
 
   const inspectorMap = {};
-  const eslesmeyenKlasmanlar = new Set();
+  const yeniOtoKlasmanlar = new Set(); // Excel'de karşılaşılan, otomatik tanınan yeni klasman adları
   let basariliTarihKayitlar = 0;
   let tarihHataliKayitlar = 0;
 
@@ -6206,11 +6251,23 @@ function performansHesapla(){
     if(!excelKlasman || !ins || !adet) return;
     
     const klasmanKey = normalize(excelKlasman);
-    const klasmanInfo = klasmanMap[klasmanKey];
-    
-    if(!klasmanInfo) {
-      eslesmeyenKlasmanlar.add(excelKlasman);
-      return;
+    let klasmanInfo = klasmanMap[klasmanKey];
+
+    // ADET BAZLI SİSTEM: Klasman Yönetimi kaldırıldığı için artık manuel
+    // klasman tanımlamaya gerek yok — Excel'de karşılaşılan her klasman adı
+    // otomatik olarak (varsayılan/sıfır süre değerleriyle) tanınır. Bu süre
+    // değerleri (urunKontrolSuresi vb.) zaten performansı etkilemiyor, sadece
+    // Standart Süre'nin referans/gösterim amaçlı hesaplanabilmesi için var.
+    if (!klasmanInfo) {
+      klasmanInfo = {
+        urunKontrolSuresi: 0,
+        olcuSuresi: 0,
+        urunKabulSuresi: 0,
+        istasyonSuresi: 0,
+        istasyonDetay: []
+      };
+      klasmanMap[klasmanKey] = klasmanInfo;
+      yeniOtoKlasmanlar.add(excelKlasman);
     }
     
     if(!inspectorMap[ins]) {
@@ -6652,7 +6709,10 @@ function performansHesapla(){
   // Bu sayede "Sheets'ten Çek" yapıldığında hesaplanan veri doğru gelir.
   pushPerformansRawToSheets(liste);
   
-  showFileStatus(`✅ ${liste.length}` + (translations[currentLang]||translations.tr).analysis_done, 'var(--green)');
+  const otoKlasmanNotu = yeniOtoKlasmanlar.size > 0
+    ? ` (${yeniOtoKlasmanlar.size} yeni klasman adı otomatik tanındı: ${[...yeniOtoKlasmanlar].slice(0,5).join(', ')}${yeniOtoKlasmanlar.size > 5 ? '…' : ''})`
+    : '';
+  showFileStatus(`✅ ${liste.length}` + (translations[currentLang]||translations.tr).analysis_done + otoKlasmanNotu, 'var(--green)');
 }
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
