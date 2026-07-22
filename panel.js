@@ -93,7 +93,6 @@ const translations = {
     nav_home:             'Ana Sayfa',
     nav_dashboard:        'Dashboard',
     nav_management:       'Yönetim',
-    nav_klasman_mgmt:     'Klasman Yönetimi',
     nav_analysis:         'Analiz',
     nav_klasman_analysis: 'Klasman Analizi',
     nav_perf_analysis:    'Performans Analizi',
@@ -155,7 +154,6 @@ const translations = {
     pw_wrong_klasman:     'Yanlış şifre!',
     pw_overlay_title:     'Giriş Yap',
     pw_overlay_sub:       'Devam etmek için şifrenizi girin',
-    pw_klasman_title:     'Klasman Yönetimi',
     pw_klasman_sub:       'Bu bölüme erişmek için şifre gereklidir',
     // Dynamic JS strings
     sending:              '⏳ Gönderiliyor...',
@@ -214,7 +212,7 @@ const translations = {
     open_label:           'Açık',
     hide_label:           'Gizle',
     raw_avg:              'Ham Ort.:',
-    perf_formula:         'Standart Süre ÷ (Gün × 7.5s) × 100',
+    perf_formula:         'Kontrol Edilen Adet ÷ Beklenen Adet × 100',
     adj_formula:          'Ham Perf × (100÷${hedef})',
     records_word:         'kayıt',
     days_x_formula:       'gün × 7.5s = {h}s mesai bazlı',
@@ -346,13 +344,11 @@ const translations = {
     klasman_details:       '📋 Klasman Detayları',
     klasman_filter_empty:  'Filtreyle eşleşen klasman bulunamadı',
     klasman_pw_hint:       'Bu sayfa için erişim şifresi:',
-    klasman_pw_label:      '🔑 Klasman Yönetimi Şifresi:',
     live_h2_sub:           'Inspector performansını canlı takip edin',
     live_h2_title:         'Canlı Performans Gösterimi',
     live_page_sub:         'Inspector performanslarını büyük ekranda yayınlayın · HD video dışa aktarımı',
     live_page_title:       'Canlı Performans Gösterimi',
     login_klasman_sub:     'Bu bölüme erişmek için yönetici şifresi gereklidir',
-    login_klasman_title:   'Klasman Yönetimi',
     no_data_hint:          'Analizi görmek için Excel yükleyin ve klasman tanımlarını tamamlayın',
     no_data_live:          'Henüz veri yok',
     no_perf_data:          'Performans Verisi Bulunamadı',
@@ -364,9 +360,7 @@ const translations = {
     open_link_hint:        'Tabloyu tarayıcıda açmak için kullanılır',
     opt_excellent:         'Mükemmel (≥95%)',
     opt_good:              'İyi (≥85%)',
-    overtime_duration:     'Mesai Süresi',
-    page_klasman_sub:      'Ürün klasmanlarını tanımlayın ve istasyon sürelerini ayarlayın',
-    page_klasman_title:    'Klasman Yönetimi',
+    overtime_duration:     'Overtime Süresi',
     perf_how_sub:          'Hesaplama mantığı, formüller ve Google Sheets entegrasyonu',
     perf_how_title:        '📊 Performans Analizi — Nasıl Çalışır?',
     perf_page_sub:         'Excel dosyası yükleyin ve inspector bazında performansı ölçün',
@@ -416,8 +410,7 @@ const translations = {
     station_count:         'İstasyon Sayısı',
     status_high:           '🔴 Yüksek',
     status_near:           '⚠️ Yakın',
-    std_duration:          'Standart Süre',
-    std_duration_th:       'Standart Süre',
+    std_duration:          'Çalışma Süresi',
     top5:                  'İlk 10',
     total_duration_label:  'Toplam Süre (sn)',
     total_product:         'Toplam Ürün',
@@ -462,7 +455,7 @@ const translations = {
     no_std:                'Std Yok',
     std_duration_sn:       '🕐 Standart Süre (sn)',
     actual_duration_sn:    '⏱ Fiili/Mesai Süresi (sn)',
-    perf_formula_inline:   '(Standart Süre ÷ Mesai Süresi) × 100',
+    perf_formula_inline:   '(Kontrol Edilen Adet ÷ Beklenen Adet) × 100',
     file_uploading:        '⏳ Dosya yükleniyor...',
     file_empty:            '❌ Dosya boş görünüyor.',
     file_loaded:           '✅ satır başarıyla yüklendi — ',
@@ -728,7 +721,6 @@ try {
 // Yönetilebilir sekmeler (Kullanıcı Yönetimi sayfasında checkbox olarak gösterilir)
 const ASSIGNABLE_TABS = [
   { id: 'dashboard',        label: 'Dashboard' },
-  { id: 'klasman-analiz',   label: 'Klasman Analizi' },
   { id: 'performans',       label: 'Performans Analizi' },
   { id: 'canli',            label: 'Canlı Gösterim' },
   { id: 'teknik-inceleme',  label: 'Teknik İnceleme' }
@@ -1441,538 +1433,12 @@ async function pushToSheets() {
     });
  
 
-function renderKlasmanAnaliz() {
-  const el = document.getElementById('klasman-analiz-icerik');
-  if (!el) return;
-
-  if (!performansData || !performansData.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">🎯</div><h3>${(translations[currentLang]||translations.tr).no_data_js}</h3><p>${(translations[currentLang]||translations.tr).no_data_js_hint}</p></div>';
-    return;
-  }
-
-  const klasmanMap = {};
-  performansData.forEach(inspector => {
-    Object.entries(inspector.klasmanlar || {}).forEach(([klasmanAd, kd]) => {
-      if (!klasmanMap[klasmanAd]) {
-        klasmanMap[klasmanAd] = {
-          ad: klasmanAd,
-          toplamAdet: 0,
-          toplamFiiliSure: 0,
-          toplamStandartSure: 0,
-          inspectorSayisi: 0,
-          standartKontrolSure: null,
-          istasyonSure: null,
-          kayitSayisi: 0,
-          adetListesi: []
-        };
-      }
-      klasmanMap[klasmanAd].toplamAdet        += kd.adet || 0;
-      klasmanMap[klasmanAd].toplamFiiliSure   += kd.kayitFiiliSure || 0;
-      klasmanMap[klasmanAd].toplamStandartSure += kd.standartSure || 0;
-      klasmanMap[klasmanAd].inspectorSayisi   += 1;
-      (kd.kayitlar || []).forEach(r => {
-        klasmanMap[klasmanAd].kayitSayisi += 1;
-        if (r.adet) klasmanMap[klasmanAd].adetListesi.push(r.adet);
-      });
-    });
-  });
-
-  klasmanlar.forEach(k => {
-    if (klasmanMap[k.ad]) {
-      klasmanMap[k.ad].standartKontrolSure = parseFloat(k.urunKontrolSuresi) || 0;
-      klasmanMap[k.ad].istasyonSure = k.istasyonlar.reduce((s, i) => s + (parseFloat(i.sure) || 0), 0);
-      klasmanMap[k.ad].olcuSuresi = parseFloat(k.olcuSuresi) || 0;
-      klasmanMap[k.ad].urunKabulSuresi = parseFloat(k.urunKabulSuresi) || 0;
-    }
-  });
-
-  const liste = Object.values(klasmanMap)
-    .filter(k => k.toplamAdet > 0)
-    .sort((a, b) => b.toplamAdet - a.toplamAdet);
-
-  if (!liste.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div><h3>${(translations[currentLang]||translations.tr).data_not_found}</h3></div>';
-    return;
-  }
-
-  const kartlar = liste.map(k => {
-    const standart = k.toplamAdet > 0 && k.toplamStandartSure > 0
-  ? k.toplamStandartSure / k.toplamAdet
-  : (k.standartKontrolSure || 0);
-    const istasyon       = k.istasyonSure || 0;
-    const gerceklesenOrt = k.toplamAdet > 0 && k.toplamFiiliSure > 0
-      ? k.toplamFiiliSure / k.toplamAdet : null;
-    const fark = gerceklesenOrt !== null && standart > 0
-      ? gerceklesenOrt - standart : null;
-    const yuzdeFark = fark !== null && standart > 0
-      ? Math.round((fark / standart) * 100) : null;
-    const barGenislik = gerceklesenOrt !== null && standart > 0
-      ? Math.min(200, Math.round((gerceklesenOrt / standart) * 100)) : 0;
-    const barRenk = fark === null ? 'var(--muted2)'
-      : fark <= 0 ? '#00897B'
-      : fark <= standart * 0.2 ? '#F57F17' : '#C62828';
-    const farkIkon = standart === 0 ? '⚠️ Standart süre girilmemiş'
-      : fark === null ? '—'
-      : fark <= 0 ? '▼ Hedef Altında ✓' : '▲ Hedef Üstünde';
-
-    return `
-    <div style="background:#fff;border:1.5px solid var(--border2);border-radius:14px;padding:20px;box-shadow:var(--shadow);position:relative;overflow:hidden;">
-      <div style="position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,${barRenk},${barRenk}88);border-radius:14px 14px 0 0;"></div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div>
-          <div style="font-size:15px;font-weight:700;color:var(--navy);">${k.ad}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">${formatTR(k.toplamAdet)} adet · ${k.inspectorSayisi} inspector</div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-size:22px;font-weight:800;color:${barRenk};font-family:'DM Mono',monospace;line-height:1;">${gerceklesenOrt !== null ? gerceklesenOrt.toFixed(2)+'sn' : '—'}</div>
-          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:2px;" data-i18n="actual_per_unit">Actual/Unit</div>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
-        <div style="background:var(--lblue3);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;">
-          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">📐 Standart</div>
-          <div style="font-size:18px;font-weight:700;color:var(--navy);font-family:'DM Mono',monospace;">${standart > 0 ? standart.toFixed(2)+'sn' : '—'}</div>
-          <div style="font-size:10px;color:var(--muted2);margin-top:3px;" data-i18n="one_unit_check">1 unit inspection</div>
-          ${istasyon > 0 ? `<div style="font-size:10px;color:var(--muted2);margin-top:1px;">+ ${istasyon.toFixed(2)}sn istasyon</div>` : ''}
-        </div>
-        <div style="background:${fark!==null&&fark<=0?'var(--lgreen)':standart===0?'var(--lamber)':'var(--lred)'};border:1px solid ${fark!==null&&fark<=0?'#B2DFDB':standart===0?'#FFE082':'#FFCDD2'};border-radius:10px;padding:12px 14px;">
-          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;" data-i18n="actual_label">⏱ Actual</div>
-          <div style="font-size:18px;font-weight:700;color:${barRenk};font-family:'DM Mono',monospace;">${gerceklesenOrt !== null ? gerceklesenOrt.toFixed(2)+'sn' : '—'}</div>
-          <div style="font-size:10px;color:${barRenk};margin-top:3px;font-weight:600;">
-            ${fark !== null ? (fark>0?'+':'')+fark.toFixed(2)+'sn fark' : 'Standart girilmemiş'}
-            ${yuzdeFark !== null ? ` (${fark>0?'+':''}${yuzdeFark}%)` : ''}
-          </div>
-        </div>
-      </div>
-      <div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px;">
-          <span data-i18n="actual_vs_std">Actual / Standard ratio</span>
-          <span style="font-weight:600;color:${barRenk}">${barGenislik}%</span>
-        </div>
-        <div style="height:8px;background:var(--border2);border-radius:4px;overflow:hidden;">
-          <div style="width:${Math.min(100,barGenislik)}%;height:100%;background:${barRenk};border-radius:4px;"></div>
-        </div>
-      </div>
-      <div style="text-align:center;padding:6px 12px;border-radius:8px;background:${fark!==null&&fark<=0?'var(--lgreen)':standart===0?'var(--lamber)':'var(--lred)'};border:1px solid ${fark!==null&&fark<=0?'#B2DFDB':standart===0?'#FFE082':'#FFCDD2'};">
-        <span style="font-size:11px;font-weight:700;color:${barRenk};">${farkIkon}</span>
-      </div>
-    </div>`;
-  }).join('');
-
-  pushKlasmanAnalizToSheets(liste);
-
-  el.innerHTML = `
-    <div style="background:linear-gradient(135deg,var(--navy) 0%,var(--blue) 100%);border-radius:12px;padding:16px 22px;margin-bottom:20px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
-      <div style="font-size:28px;">🎯</div>
-      <div style="flex:1;">
-        <div style="font-size:15px;font-weight:700;color:#fff;">${(translations[currentLang]||translations.tr).klasman_actual_analysis}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:3px;">${liste.length} ${(translations[currentLang]||translations.tr).klasman_word} · ${formatTR(liste.reduce((s,k)=>s+k.toplamAdet,0))} ${(translations[currentLang]||translations.tr).total_units_summary}</div>
-      </div>
-      ${[
-        ['✅',(translations[currentLang]||translations.tr).on_target,  liste.filter(k=>{const g=k.toplamAdet>0&&k.toplamFiiliSure>0?k.toplamFiiliSure/k.toplamAdet:null;return g!==null&&k.standartKontrolSure>0&&g<=k.standartKontrolSure;}).length,'#4CAF50'],
-        ['⚠️',(translations[currentLang]||translations.tr).near_target, liste.filter(k=>{const g=k.toplamAdet>0&&k.toplamFiiliSure>0?k.toplamFiiliSure/k.toplamAdet:null;const s=k.standartKontrolSure;return g!==null&&s>0&&g>s&&g<=s*1.2;}).length,'#FFB74D'],
-        ['🔴',(translations[currentLang]||translations.tr).high_label,  liste.filter(k=>{const g=k.toplamAdet>0&&k.toplamFiiliSure>0?k.toplamFiiliSure/k.toplamAdet:null;const s=k.standartKontrolSure;return g!==null&&s>0&&g>s*1.2;}).length,'#EF9A9A'],
-        ['➖',(translations[currentLang]||translations.tr).no_std,       liste.filter(k=>!k.standartKontrolSure||k.standartKontrolSure===0).length,'rgba(255,255,255,.5)']
-      ].map(([ic,lb,cnt,col])=>`
-        <div style="text-align:center;background:rgba(255,255,255,.1);border-radius:10px;padding:10px 16px;min-width:80px;">
-          <div style="font-size:16px;">${ic}</div>
-          <div style="font-size:20px;font-weight:800;color:${col};font-family:'DM Mono',monospace;line-height:1.2;">${cnt}</div>
-          <div style="font-size:9px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.5px;">${lb}</div>
-        </div>`).join('')}
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;">
-      ${kartlar}
-    </div>
-  `;
-}
 showSuccessMessage('✅ ' + klasmanlar.length + ' ' + (translations[currentLang]||translations.tr).sheets_sent_klasman);
   } catch(err) {
     alert('❌ Gönderme hatası: ' + err.message);
   } finally {
     if (btn) { btn.textContent = origText; btn.disabled = false; }
   }
-}
-
-// ── KLASMAN ANALİZ STATE ──
-let _klAnalizPage = 1;
-const _KL_ANALIZ_PER_PAGE = 12;
-let _klAnalizFiltre = '';
-let _klAnalizSiralama = 'adet-desc';
-let _klAnalizTumListe = [];
-
-function _klAnalizUygula() {
-  _klAnalizPage = 1;
-  const el = document.getElementById('klasman-analiz-icerik');
-  if (el) _renderKlAnalizUI(el);
-}
-
-function _klAnalizGoTo(p) {
-  _klAnalizPage = p;
-  const el = document.getElementById('klasman-analiz-icerik');
-  if (el) _renderKlAnalizUI(el);
-}
-
-function renderKlasmanAnaliz() {
-  const el = document.getElementById('klasman-analiz-icerik');
-  if (!el) return;
-
-  if (!performansData || !performansData.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">🎯</div><h3>${(translations[currentLang]||translations.tr).no_data_js}</h3><p>${(translations[currentLang]||translations.tr).no_data_js_hint}</p></div>';
-    return;
-  }
-
-  const klasmanMap = {};
-  performansData.forEach(inspector => {
-    Object.entries(inspector.klasmanlar || {}).forEach(([klasmanAd, kd]) => {
-      if (!klasmanMap[klasmanAd]) {
-        klasmanMap[klasmanAd] = {
-          ad: klasmanAd, toplamAdet: 0, toplamFiiliSure: 0,
-          toplamStandartSure: 0, inspectorSayisi: 0,
-          standartKontrolSure: null, istasyonSure: null,
-          kayitSayisi: 0, adetListesi: []
-        };
-      }
-      klasmanMap[klasmanAd].toplamAdet         += kd.adet || 0;
-      klasmanMap[klasmanAd].toplamFiiliSure    += kd.kayitFiiliSure || 0;
-      klasmanMap[klasmanAd].toplamStandartSure += kd.standartSure || 0;
-      klasmanMap[klasmanAd].inspectorSayisi    += 1;
-      (kd.kayitlar || []).forEach(r => {
-        klasmanMap[klasmanAd].kayitSayisi += 1;
-        if (r.adet) klasmanMap[klasmanAd].adetListesi.push(r.adet);
-      });
-    });
-  });
-
-  klasmanlar.forEach(k => {
-    if (klasmanMap[k.ad]) {
-      klasmanMap[k.ad].standartKontrolSure = parseFloat(k.urunKontrolSuresi) || 0;
-      klasmanMap[k.ad].istasyonSure = k.istasyonlar.reduce((s, i) => s + (parseFloat(i.sure) || 0), 0);
-      klasmanMap[k.ad].olcuSuresi = parseFloat(k.olcuSuresi) || 0;
-      klasmanMap[k.ad].urunKabulSuresi = parseFloat(k.urunKabulSuresi) || 0;
-    }
-  });
-
-  _klAnalizTumListe = Object.values(klasmanMap)
-    .filter(k => k.toplamAdet > 0)
-    .sort((a, b) => b.toplamAdet - a.toplamAdet);
-
-  if (!_klAnalizTumListe.length) {
-    el.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div><h3>${(translations[currentLang]||translations.tr).data_not_found}</h3></div>';
-    return;
-  }
-
-  pushKlasmanAnalizToSheets(_klAnalizTumListe);
-  _klAnalizPage = 1;
-  _klAnalizFiltre = '';
-  _klAnalizSiralama = 'adet-desc';
-  _renderKlAnalizUI(el);
-}
-
-function _klAnalizFiltrele() {
-  let liste = [..._klAnalizTumListe];
-
-  // DÜZELTME: durum filtresi ve "fark" sıralaması artık adet-başı ortalama
-  // yerine TOPLAM oran (toplamFiiliSure / toplamStandartSure) kullanır —
-  // bkz. _renderKlAnalizUI içindeki açıklama.
-  const oranHesapla = k => (k.toplamStandartSure > 0 && k.toplamFiiliSure > 0)
-    ? k.toplamFiiliSure / k.toplamStandartSure : null;
-
-  if (_klAnalizFiltre.trim()) {
-    const q = _klAnalizFiltre.trim().toLowerCase();
-    liste = liste.filter(k => k.ad.toLowerCase().includes(q));
-  }
-
-  const durumFiltre = document.getElementById('kla-durum-filtre')?.value || '';
-  if (durumFiltre === 'hedefte') {
-    liste = liste.filter(k => {
-      const o = oranHesapla(k);
-      return o !== null && k.toplamStandartSure > 0 && o <= 1;
-    });
-  } else if (durumFiltre === 'yakin') {
-    liste = liste.filter(k => {
-      const o = oranHesapla(k);
-      return o !== null && k.toplamStandartSure > 0 && o > 1 && o <= 1.2;
-    });
-  } else if (durumFiltre === 'yuksek') {
-    liste = liste.filter(k => {
-      const o = oranHesapla(k);
-      return o !== null && k.toplamStandartSure > 0 && o > 1.2;
-    });
-  } else if (durumFiltre === 'stdyok') {
-    liste = liste.filter(k => !k.toplamStandartSure || k.toplamStandartSure === 0);
-  }
-
-  switch (_klAnalizSiralama) {
-    case 'adet-desc':  liste.sort((a, b) => b.toplamAdet - a.toplamAdet); break;
-    case 'adet-asc':   liste.sort((a, b) => a.toplamAdet - b.toplamAdet); break;
-    case 'ad-asc':     liste.sort((a, b) => a.ad.localeCompare(b.ad, 'tr')); break;
-    case 'ad-desc':    liste.sort((a, b) => b.ad.localeCompare(a.ad, 'tr')); break;
-    case 'fark-desc':  liste.sort((a, b) => {
-      const oa = oranHesapla(a); const ob = oranHesapla(b);
-      const ga = oa !== null ? oa : -Infinity;
-      const gb = ob !== null ? ob : -Infinity;
-      return gb - ga;
-    }); break;
-    case 'fark-asc':   liste.sort((a, b) => {
-      const oa = oranHesapla(a); const ob = oranHesapla(b);
-      const ga = oa !== null ? oa : Infinity;
-      const gb = ob !== null ? ob : Infinity;
-      return ga - gb;
-    }); break;
-  }
-
-  return liste;
-}
-
-function _renderKlAnalizUI(el) {
-  const tumListe   = _klAnalizFiltrele();
-  const totalPages = Math.max(1, Math.ceil(tumListe.length / _KL_ANALIZ_PER_PAGE));
-  if (_klAnalizPage > totalPages) _klAnalizPage = totalPages;
-  if (_klAnalizPage < 1) _klAnalizPage = 1;
-
-  const startIdx   = (_klAnalizPage - 1) * _KL_ANALIZ_PER_PAGE;
-  const sayfaListe = tumListe.slice(startIdx, startIdx + _KL_ANALIZ_PER_PAGE);
-  const orijinal   = _klAnalizTumListe;
-
-  // DÜZELTME: "adet başına ortalama" yerine TOPLAM baz kullanılıyor.
-  // Sebep: Ölçü Süresi ve Ürün Kabul Süresi parti başına sabit/yarı-sabit
-  // maliyetlerdir. Bunları toplam standart süreye dahil edip adede bölmek,
-  // küçük partilerde oranı yapay şişirir, büyük partilerde yapay düşürür.
-  // toplamFiiliSure / toplamStandartSure oranı bu çarpıtmadan etkilenmez.
-  const oranHesaplaKlasman = k => (k.toplamStandartSure > 0 && k.toplamFiiliSure > 0)
-    ? k.toplamFiiliSure / k.toplamStandartSure
-    : null;
-
-  const hedefte = orijinal.filter(k => { const o = oranHesaplaKlasman(k); return o !== null && k.toplamStandartSure > 0 && o <= 1; }).length;
-  const yakin   = orijinal.filter(k => { const o = oranHesaplaKlasman(k); return o !== null && k.toplamStandartSure > 0 && o > 1 && o <= 1.2; }).length;
-  const yuksek  = orijinal.filter(k => { const o = oranHesaplaKlasman(k); return o !== null && k.toplamStandartSure > 0 && o > 1.2; }).length;
-  const stdYok  = orijinal.filter(k => !k.toplamStandartSure || k.toplamStandartSure === 0).length;
-
-  const kartlar = sayfaListe.map((k, idxOnPage) => {
-    // "Standart" ve "Gerçekleşen" (adet başına, sn) — sadece GÖRSEL REFERANS.
-    // Bunlar parti büyüklük karışımından etkilenebilir; bu yüzden durum/renk/yüzde
-    // hesaplamasında KULLANILMAZ, sadece kart üstünde bilgi amaçlı gösterilir.
-    const standart = k.toplamAdet > 0 && k.toplamStandartSure > 0
-  ? k.toplamStandartSure / k.toplamAdet
-  : (k.standartKontrolSure || 0);
-    const istasyon       = k.istasyonSure || 0;
-    const gerceklesenOrt = k.toplamAdet > 0 && k.toplamFiiliSure > 0 ? k.toplamFiiliSure / k.toplamAdet : null;
-
-    // DÜZELTME: Asıl performans değerlendirmesi TOPLAM baz üzerinden yapılır.
-    // oranToplam = toplamFiiliSure / toplamStandartSure (1.0 = tam hedefte)
-    const oranToplam = (k.toplamStandartSure > 0 && k.toplamFiiliSure > 0)
-      ? k.toplamFiiliSure / k.toplamStandartSure : null;
-    const yuzdeFark   = oranToplam !== null ? Math.round((oranToplam - 1) * 100) : null;
-    const farkSnGorsel = (gerceklesenOrt !== null && standart > 0) ? gerceklesenOrt - standart : null;
-    const barGenislik = oranToplam !== null ? Math.min(200, Math.round(oranToplam * 100)) : 0;
-    const barRenk     = oranToplam === null ? 'var(--muted2)'
-      : oranToplam <= 1 ? '#00897B'
-      : oranToplam <= 1.2 ? '#F57F17' : '#C62828';
-    const farkIkon    = k.toplamStandartSure === 0 ? '⚠️ Standart süre girilmemiş'
-      : oranToplam === null ? '—'
-      : oranToplam <= 1 ? '▼ Hedef Altında ✓' : '▲ Hedef Üstünde';
-
-    // ── Hesaplama detayı (buton ile açılır) ──
-    const adetListesi   = k.adetListesi || [];
-    const minAdet       = adetListesi.length ? Math.min(...adetListesi) : null;
-    const maxAdet        = adetListesi.length ? Math.max(...adetListesi) : null;
-    const ortAdetParti  = adetListesi.length ? (adetListesi.reduce((s,a)=>s+a,0) / adetListesi.length) : null;
-    const detayId = 'kl-detay-' + k.ad.replace(/[^a-zA-Z0-9]/g,'_') + '-' + idxOnPage;
-
-    const detayHtml = `
-      <div id="${detayId}" style="display:none;margin-top:10px;padding:14px;background:#F7FAFE;border:1px solid var(--border2);border-radius:10px;font-size:11.5px;color:var(--navy);line-height:1.7;">
-        <div style="font-weight:700;margin-bottom:8px;font-size:12px;">🧮 Hesaplama Detayı — ${k.ad}</div>
-        <div style="margin-bottom:6px;color:var(--muted2);">
-          Bu klasmanda <b>${k.kayitSayisi || 0}</b> kayıt (parti) işlendi.
-          ${minAdet !== null ? `Parti büyüklüğü ${minAdet} ile ${maxAdet} adet arasında değişiyor (ortalama ${ortAdetParti.toFixed(1)} adet).` : ''}
-        </div>
-        <div style="border-top:1px dashed var(--border2);margin:8px 0;"></div>
-        <div style="margin-bottom:4px;"><b>1) Toplam Standart Süre</b> (her partinin kendi standart süresi toplamı):</div>
-        <div style="margin-left:10px;color:var(--muted2);margin-bottom:6px;">
-          = Σ [ (1 Birim Muayene Süresi × parti adedi) + Ölçü eki + Ürün Kabul eki + İstasyon süresi ]<br>
-          = <b>${fmtSnKisa(k.toplamStandartSure)}</b> (${k.toplamStandartSure.toFixed(1)}sn)
-        </div>
-        <div style="margin-bottom:4px;"><b>2) Toplam Gerçekleşen Süre</b> (Excel'deki Başlangıç–Bitiş farklarının toplamı):</div>
-        <div style="margin-left:10px;color:var(--muted2);margin-bottom:6px;">
-          = <b>${fmtSnKisa(k.toplamFiiliSure)}</b> (${k.toplamFiiliSure.toFixed(1)}sn)
-        </div>
-        <div style="margin-bottom:4px;"><b>3) Performans Oranı</b> (yüzdeye çevrilmiş hâliyle kart üstündeki yüzde budur):</div>
-        <div style="margin-left:10px;color:var(--muted2);margin-bottom:6px;">
-          = Toplam Gerçekleşen ÷ Toplam Standart × 100<br>
-          = ${k.toplamFiiliSure.toFixed(1)} ÷ ${k.toplamStandartSure.toFixed(1)} × 100 = <b style="color:${barRenk}">${oranToplam !== null ? Math.round(oranToplam*100)+'%' : '—'}</b>
-        </div>
-        <div style="border-top:1px dashed var(--border2);margin:8px 0;"></div>
-        <div style="color:var(--muted2);font-size:10.5px;">
-          ℹ️ Kartın üst kısmındaki "${standart>0?standart.toFixed(2):'—'}sn / ${gerceklesenOrt!==null?gerceklesenOrt.toFixed(2):'—'}sn" adet-başı değerleri yalnızca
-          referans amaçlıdır — Ölçü ve Ürün Kabul süreleri parti başına sabit eklendiğinden, partilerin
-          büyüklüğüne göre adet-başı ortalama yapay olarak değişebilir. Bu yüzden <b>Hedef Üstünde / Altında</b>
-          durumu adet-başı değil, yukarıdaki TOPLAM oran üzerinden belirlenir.
-        </div>
-      </div>`;
-
-    return `
-    <div style="background:#fff;border:1.5px solid var(--border2);border-radius:14px;padding:20px;box-shadow:var(--shadow);position:relative;overflow:hidden;">
-      <div style="position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,${barRenk},${barRenk}88);border-radius:14px 14px 0 0;"></div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <div>
-          <div style="font-size:15px;font-weight:700;color:var(--navy);">${k.ad}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px;">${formatTR(k.toplamAdet)} adet · ${k.inspectorSayisi} inspector</div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-size:22px;font-weight:800;color:${barRenk};font-family:'DM Mono',monospace;line-height:1;">${oranToplam !== null ? Math.round(oranToplam*100)+'%' : '—'}</div>
-          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:2px;">Toplam Oran</div>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
-        <div style="background:var(--lblue3);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;">
-          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">📐 Standart (adet başı)</div>
-          <div style="font-size:18px;font-weight:700;color:var(--navy);font-family:'DM Mono',monospace;">${standart > 0 ? standart.toFixed(2)+'sn' : '—'}</div>
-          <div style="font-size:10px;color:var(--muted2);margin-top:3px;">1 adet ürün kontrol (ortalama)</div>
-          ${istasyon > 0 ? `<div style="font-size:10px;color:var(--muted2);margin-top:1px;">+ ${istasyon.toFixed(2)}sn istasyon</div>` : ''}
-        </div>
-        <div style="background:${barRenk==='#00897B'?'var(--lgreen)':k.toplamStandartSure===0?'var(--lamber)':'var(--lred)'};border:1px solid ${barRenk==='#00897B'?'#B2DFDB':k.toplamStandartSure===0?'#FFE082':'#FFCDD2'};border-radius:10px;padding:12px 14px;">
-          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">⏱ Gerçekleşen (adet başı)</div>
-          <div style="font-size:18px;font-weight:700;color:${barRenk};font-family:'DM Mono',monospace;">${gerceklesenOrt !== null ? gerceklesenOrt.toFixed(2)+'sn' : '—'}</div>
-          <div style="font-size:10px;color:${barRenk};margin-top:3px;font-weight:600;">
-            ${farkSnGorsel !== null ? (farkSnGorsel>0?'+':'')+farkSnGorsel.toFixed(2)+'sn fark' : 'Standart girilmemiş'}
-            ${yuzdeFark !== null ? ` (${yuzdeFark>0?'+':''}${yuzdeFark}%)` : ''}
-          </div>
-        </div>
-      </div>
-      <div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px;">
-          <span>Toplam Gerçekleşen / Toplam Standart oranı</span>
-          <span style="font-weight:600;color:${barRenk}">${barGenislik}%</span>
-        </div>
-        <div style="height:8px;background:var(--border2);border-radius:4px;overflow:hidden;">
-          <div style="width:${Math.min(100,barGenislik)}%;height:100%;background:${barRenk};border-radius:4px;"></div>
-        </div>
-      </div>
-      <div style="text-align:center;padding:6px 12px;border-radius:8px;background:${barRenk==='#00897B'?'var(--lgreen)':k.toplamStandartSure===0?'var(--lamber)':'var(--lred)'};border:1px solid ${barRenk==='#00897B'?'#B2DFDB':k.toplamStandartSure===0?'#FFE082':'#FFCDD2'};margin-bottom:8px;">
-        <span style="font-size:11px;font-weight:700;color:${barRenk};">${farkIkon}</span>
-      </div>
-      <button onclick="document.getElementById('${detayId}').style.display = document.getElementById('${detayId}').style.display==='none' ? 'block' : 'none'; this.textContent = this.textContent.includes('Göster') ? '🧮 Hesaplamayı Gizle' : '🧮 Hesaplamayı Göster';"
-        style="width:100%;padding:7px;border-radius:8px;border:1px solid var(--border2);background:#fff;color:var(--blue2);font-size:11px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;">
-        🧮 Hesaplamayı Göster
-      </button>
-      ${detayHtml}
-    </div>`;
-  }).join('');
-
-  // Sayfalama butonları
-  const pageBtns = (() => {
-    let html = '';
-    let pages = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      pages = [1];
-      if (_klAnalizPage > 3) pages.push('...');
-      for (let i = Math.max(2, _klAnalizPage - 1); i <= Math.min(totalPages - 1, _klAnalizPage + 1); i++) pages.push(i);
-      if (_klAnalizPage < totalPages - 2) pages.push('...');
-      pages.push(totalPages);
-    }
-    pages.forEach(p => {
-      if (p === '...') {
-        html += `<span style="padding:0 4px;color:var(--muted);line-height:32px;">…</span>`;
-      } else {
-        const active = p === _klAnalizPage;
-        html += `<button onclick="_klAnalizGoTo(${p})"
-          style="min-width:32px;height:32px;border-radius:7px;border:1px solid ${active?'var(--blue2)':'var(--border)'};
-          background:${active?'var(--blue2)':'var(--white)'};color:${active?'#fff':'var(--navy)'};
-          cursor:pointer;font-size:12px;font-weight:${active?'700':'500'};padding:0 8px;
-          font-family:'DM Sans',sans-serif;transition:all .12s;">${p}</button>`;
-      }
-    });
-    return html;
-  })();
-
-  const mevcut_filtre  = document.getElementById('kla-durum-filtre')?.value || '';
-  const mevcut_siralama = _klAnalizSiralama;
-
-  el.innerHTML = `
-    <!-- ÖZET BAŞLIK -->
-    <div style="background:linear-gradient(135deg,var(--navy) 0%,var(--blue) 100%);border-radius:12px;padding:16px 22px;margin-bottom:16px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
-      <div style="font-size:28px;">🎯</div>
-      <div style="flex:1;">
-        <div style="font-size:15px;font-weight:700;color:#fff;">${(translations[currentLang]||translations.tr).klasman_actual_analysis}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:3px;">${orijinal.length} ${(translations[currentLang]||translations.tr).klasman_word} · ${formatTR(orijinal.reduce((s,k)=>s+k.toplamAdet,0))} ${(translations[currentLang]||translations.tr).total_units_summary}</div>
-      </div>
-      ${[
-        ['✅',(translations[currentLang]||translations.tr).on_target,'hedefte',hedefte,'#4CAF50'],
-        ['⚠️',(translations[currentLang]||translations.tr).near_target,'yakin',yakin,'#FFB74D'],
-        ['🔴',(translations[currentLang]||translations.tr).high_label,'yuksek',yuksek,'#EF9A9A'],
-        ['➖',(translations[currentLang]||translations.tr).no_std,'stdyok',stdYok,'rgba(255,255,255,.5)']
-      ].map(([ic,lb,val,cnt,col])=>`
-        <div onclick="document.getElementById('kla-durum-filtre').value='${val}';_klAnalizUygula()"
-          style="text-align:center;background:rgba(255,255,255,.1);border-radius:10px;padding:10px 16px;min-width:80px;cursor:pointer;transition:background .15s;"
-          onmouseover="this.style.background='rgba(255,255,255,.2)'" onmouseout="this.style.background='rgba(255,255,255,.1)'">
-          <div style="font-size:16px;">${ic}</div>
-          <div style="font-size:20px;font-weight:800;color:${col};font-family:'DM Mono',monospace;line-height:1.2;">${cnt}</div>
-          <div style="font-size:9px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.5px;">${lb}</div>
-        </div>`).join('')}
-    </div>
-
-    <!-- FİLTRE & ARAMA ÇUBUĞU -->
-    <div style="background:var(--white);border:1px solid var(--border2);border-radius:10px;padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:var(--shadow);">
-      <div style="position:relative;flex:1;min-width:180px;">
-        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--muted2);">🔍</span>
-        <input type="text" id="kla-arama" placeholder="${(translations[currentLang]||translations.tr).select_klasman}…" value="${_klAnalizFiltre}"
-          oninput="_klAnalizFiltre=this.value;_klAnalizUygula()"
-          style="width:100%;padding:8px 12px 8px 32px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:'DM Sans',sans-serif;">
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <label style="font-size:11px;color:var(--muted);white-space:nowrap;margin:0;">${(translations[currentLang]||translations.tr).filter_perf.replace(':','')}: </label>
-        <select id="kla-durum-filtre" onchange="_klAnalizUygula()"
-          style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--navy);">
-          <option value="" ${mevcut_filtre===''?'selected':''}>${(translations[currentLang]||translations.tr).filter_all}</option>
-          <option value="hedefte" ${mevcut_filtre==='hedefte'?'selected':''}>✅ ${(translations[currentLang]||translations.tr).on_target}</option>
-          <option value="yakin" ${mevcut_filtre==='yakin'?'selected':''}>${(translations[currentLang]||translations.tr).status_near}</option>
-          <option value="yuksek" ${mevcut_filtre==='yuksek'?'selected':''}>${(translations[currentLang]||translations.tr).status_high}</option>
-          <option value="stdyok" ${mevcut_filtre==='stdyok'?'selected':''}>➖ ${(translations[currentLang]||translations.tr).no_std}</option>
-        </select>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <label style="font-size:11px;color:var(--muted);white-space:nowrap;margin:0;">${(translations[currentLang]||translations.tr).sort_label}</label>
-        <select onchange="_klAnalizSiralama=this.value;_klAnalizUygula()"
-          style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:'DM Sans',sans-serif;background:var(--white);color:var(--navy);">
-          <option value="adet-desc" ${mevcut_siralama==='adet-desc'?'selected':''}>${(translations[currentLang]||translations.tr).sort_qty_desc}</option>
-          <option value="adet-asc"  ${mevcut_siralama==='adet-asc'?'selected':''}>${(translations[currentLang]||translations.tr).sort_qty_asc}</option>
-          <option value="ad-asc"    ${mevcut_siralama==='ad-asc'?'selected':''}>${(translations[currentLang]||translations.tr).sort_name_asc}</option>
-          <option value="ad-desc"   ${mevcut_siralama==='ad-desc'?'selected':''}>${(translations[currentLang]||translations.tr).sort_name_desc}</option>
-          <option value="fark-desc" ${mevcut_siralama==='fark-desc'?'selected':''}>${(translations[currentLang]||translations.tr).sort_diff_worst}</option>
-          <option value="fark-asc"  ${mevcut_siralama==='fark-asc'?'selected':''}>${(translations[currentLang]||translations.tr).sort_diff_best}</option>
-        </select>
-      </div>
-      <button onclick="_klAnalizFiltre='';_klAnalizSiralama='adet-desc';document.getElementById('kla-durum-filtre').value='';_klAnalizUygula()"
-        style="padding:7px 14px;border:1px solid var(--border);border-radius:8px;font-size:12px;background:var(--white);cursor:pointer;color:var(--muted);font-family:'DM Sans',sans-serif;transition:all .15s;"
-        onmouseover="this.style.background='var(--lblue3)'" onmouseout="this.style.background='var(--white)'">${(translations[currentLang]||translations.tr).reset}</button>
-      <span style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-left:auto;">
-        ${tumListe.length} / ${orijinal.length} klasman · Sayfa ${_klAnalizPage}/${totalPages}
-      </span>
-    </div>
-
-    <!-- KARTLAR -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;margin-bottom:20px;">
-      ${kartlar || '<div style="grid-column:1/-1;padding:48px;text-align:center;color:var(--muted2);"><div style="font-size:32px;margin-bottom:12px;">🔍</div><h3 style="font-weight:500;color:var(--muted);" data-i18n="klasman_filter_empty">Filtreyle eşleşen klasman bulunamadı</h3></div>'}
-    </div>
-
-    <!-- SAYFALAMA -->
-    ${totalPages > 1 ? `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-top:1px solid var(--border2);margin-top:4px;">
-      <button onclick="_klAnalizGoTo(${_klAnalizPage - 1})" ${_klAnalizPage<=1?'disabled':''}
-        style="padding:8px 16px;border:1px solid var(--border);border-radius:8px;font-size:13px;cursor:pointer;
-        background:var(--white);color:var(--navy);font-family:'DM Sans',sans-serif;font-weight:500;
-        opacity:${_klAnalizPage<=1?'.4':'1'};transition:all .15s;">‹ Önceki</button>
-      <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:center;">
-        ${pageBtns}
-      </div>
-      <button onclick="_klAnalizGoTo(${_klAnalizPage + 1})" ${_klAnalizPage>=totalPages?'disabled':''}
-        style="padding:8px 16px;border:1px solid var(--border);border-radius:8px;font-size:13px;cursor:pointer;
-        background:var(--white);color:var(--navy);font-family:'DM Sans',sans-serif;font-weight:500;
-        opacity:${_klAnalizPage>=totalPages?'.4':'1'};transition:all .15s;">Sonraki ›</button>
-    </div>` : ''}
-  `;
 }
 
 async function pullFromSheets() {
@@ -2684,12 +2150,12 @@ function showPerformansHowItWorks() {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
 
             <div style="background:#fff;border:1px solid #B2DFDB;border-radius:8px;padding:11px 13px">
-              <div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:5px">🕐 Standart Süre (sn)</div>
+              <div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:5px">🎯 Beklenen Adet</div>
               <code style="font-size:10px;background:var(--offwhite);padding:4px 7px;border-radius:4px;display:block;color:var(--navy);line-height:1.8">
-                Klasman → istasyon süreleri toplamı<br>
-                × BakilacakMiktar (adet)
+                Günlük Hedef Adet<br>
+                × (Mesai Süresi ÷ 7.5 saat)
               </code>
-              <div style="font-size:10px;color:var(--muted);margin-top:6px">Bir inspektörün o miktarı <em>standart hızda</em> incelemesi için gereken teorik süre.</div>
+              <div style="font-size:10px;color:var(--muted);margin-top:6px">İnspektörün o dönemde çalıştığı süreye orantılanmış, çalışması beklenen adet.</div>
             </div>
 
             <div style="background:#fff;border:1px solid #B2DFDB;border-radius:8px;padding:11px 13px">
@@ -2704,9 +2170,9 @@ function showPerformansHowItWorks() {
             <div style="background:#fff;border:1px solid #B2DFDB;border-radius:8px;padding:11px 13px">
               <div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:5px">🏎 Hız Performansı (%)</div>
               <code style="font-size:10px;background:var(--offwhite);padding:4px 7px;border-radius:4px;display:block;color:var(--navy);line-height:1.8">
-                (Standart Süre ÷ Mesai Süresi) × 100
+                (Kontrol Edilen Adet ÷ Beklenen Adet) × 100
               </code>
-              <div style="font-size:10px;color:var(--muted);margin-top:6px">%100 = tam standart hızda çalıştı · %120 = standarttan %20 hızlı · %80 = %20 yavaş.</div>
+              <div style="font-size:10px;color:var(--muted);margin-top:6px">%100 = hedef adedi tam yaptı · %120 = hedeften %20 fazla · %80 = hedeften %20 az.</div>
             </div>
 
             <div style="background:#fff;border:1px solid #B2DFDB;border-radius:8px;padding:11px 13px">
@@ -3057,7 +2523,6 @@ async function clearDashboardData() {
   slideshowInspectors    = [];
   currentSlideIndex      = 0;
   selectedInspectorDetail = null;
-  _klAnalizTumListe      = []; // Klasman Analizi de sıfırla
 
   saveData();
   renderDashboard();
@@ -3425,8 +2890,6 @@ function showPage(id, navEl){
 
   if(id === 'dashboard') {
     renderDashboard();
-  } else if(id === 'klasman-analiz') {
-    renderKlasmanAnaliz();
   } else if(id === 'canli') {
     initCanliPage();
   } else if(id === 'performans') {
@@ -3670,205 +3133,6 @@ const PERF_SEVIYE_TANIM = {
   verypoor:  { label: 'Zayıf (<50%)',             icon: '📉', min: -Infinity, max: 50, color: '#B71C1C'      }
 };
 
-// ─────────────────────────────────────────────
-// KLASMAN SÜRE ÖNERİSİ (Sadece Admin)
-// Klasman Yönetimi'nde "Analiz Et" butonuna basınca, o klasmanın GERÇEK
-// performans verisinden (Performans Analizi'nde işlenmiş Excel verisi) adet
-// başına gerçekleşen ortalama süreyi bulur ve bunun %80'i kadar bir hedef
-// önerir (gerçekleşen 100sn ise hedef 80sn — performansı zorlayan bir hedef).
-// Üç bilinmeyen (1 Birim Muayene + Ölçü + Ürün Kabul) olduğundan tek bir doğru
-// cevap yok; üç farklı dağıtım senaryosu sunulur, admin elle seçip uygular.
-// SADECE ÖNERİ sunar — hiçbir değeri otomatik kaydetmez/değiştirmez.
-// ─────────────────────────────────────────────
-function showKlasmanSureOnerisi(klasmanId) {
-  const k = klasmanlar.find(x => x.id === klasmanId);
-  const popup = document.getElementById('klasman-sure-onerisi-popup');
-  const content = document.getElementById('klasman-sure-onerisi-content');
-  const titleEl = document.getElementById('klasman-sure-onerisi-title');
-  const subEl = document.getElementById('klasman-sure-onerisi-sub');
-  if (!k || !popup || !content) return;
-
-  titleEl.textContent = `📊 ${k.ad} — Süre Önerisi`;
-
-  // _klAnalizTumListe, Klasman Analizi sayfasında zaten hesaplanan klasman bazlı
-  // toplamları içerir (toplamAdet, toplamFiiliSure, toplamStandartSure...).
-  // Excel hiç yüklenmediyse bu liste boş olur.
-  const veri = (typeof _klAnalizTumListe !== 'undefined' ? _klAnalizTumListe : [])
-    .find(x => x.ad === k.ad);
-
-  if (!veri || !veri.toplamAdet || !veri.toplamFiiliSure) {
-    subEl.textContent = 'Bu klasman için gerçekleşen veri bulunamadı';
-    content.innerHTML = `
-      <div style="text-align:center;padding:24px;color:var(--muted)">
-        <div style="font-size:32px;margin-bottom:10px">📭</div>
-        <div style="font-weight:600;margin-bottom:6px">Gerçekleşen veri yok</div>
-        <div style="font-size:12px;line-height:1.6">
-          Bu klasman için Performans Analizi sayfasında Excel yüklenmiş ve
-          en az bir kayıt bu klasmana ait olmalı. Excel yükleyip tekrar deneyin.
-        </div>
-      </div>`;
-    popup.style.display = 'flex';
-    return;
-  }
-
-  // Gerçekleşen ortalama (adet başına, klasman geneli — toplam fiili / toplam adet)
-  const gerceklesenAdetBasi = veri.toplamFiiliSure / veri.toplamAdet;
-  const hedefAdetBasi = gerceklesenAdetBasi * 0.80; // %20 fark hedefi
-
-  subEl.textContent = `Gerçekleşen ${gerceklesenAdetBasi.toFixed(2)}sn/adet → Hedef ${hedefAdetBasi.toFixed(2)}sn/adet (%20 zorlayıcı pay)`;
-
-  // Mevcut değerler (referans için)
-  const mevcutKontrol = parseFloat(k.urunKontrolSuresi) || 0;
-  const mevcutOlcu = parseFloat(k.olcuSuresi) || 0;
-  const mevcutKabul = parseFloat(k.urunKabulSuresi) || 0;
-  const istasyonSuresi = k.istasyonlar.reduce((s, i) => s + (parseFloat(i.sure) || 0), 0);
-
-  // Mevcut formülün adet başına diğer bileşenleri — ARTIK SABİT 32 ADET DEĞİL,
-  // bu klasmanın GERÇEK kayıtlarından hesaplanan ortalama parti büyüklüğü kullanılır.
-  // (Önceki sürümde sabit 32 varsayımı, partileri daha büyük olan klasmanlarda
-  // Ölçü/Ürün Kabul katsayılarının gerçekte daha yüksek çıkmasına rağmen düşük
-  // hesaplanmasına, dolayısıyla önerilen hedefin yanlışlıkla gerçekleşenden
-  // daha "gevşek" çıkmasına yol açıyordu.)
-  const adetListesi = veri.adetListesi || [];
-  const refAdetHam = adetListesi.length
-    ? Math.round(adetListesi.reduce((s, a) => s + a, 0) / adetListesi.length)
-    : Math.round(veri.toplamAdet / Math.max(1, veri.kayitSayisi || 1)) || 32;
-  // Güvenlik sınırı: gerçek bir partinin adedi makul aralıkta olmalı (1-2000).
-  // adetListesi boş gelip kayitSayisi de yanlışlıkla çok düşükse (örn. eski/eksik
-  // formatta yüklenmiş veri), refAdet'in mantıksız büyük çıkıp öneriyi
-  // bozmasını engeller.
-  const refAdet = Math.min(2000, Math.max(1, refAdetHam));
-
-  function getOlcuAdetOneri(adet) {
-    if (adet <= 32)  return 6;
-    if (adet <= 50)  return 9;
-    if (adet <= 80)  return 9;
-    if (adet <= 125) return 9;
-    return 12;
-  }
-  function getUrunKabulKatOneri(adet) {
-    if (adet <= 32)  return 0.5;
-    if (adet <= 80)  return 1.1;
-    if (adet <= 125) return 1.2;
-    return 1.3;
-  }
-  const olcuKat = getOlcuAdetOneri(refAdet);
-  const kabulKat = getUrunKabulKatOneri(refAdet);
-
-  // TEK ÖNERİ: Mevcut 3 bileşenin (1 Birim Muayene + Ölçü + Ürün Kabul) birbirine
-  // oranı korunarak hepsi aynı katsayıyla küçültülür/büyütülür. Klasmanın mevcut
-  // yapısını bozmadan, üç alanı da dolduran tek ve sağlam bir öneri sunar.
-  //
-  // ÖNEMLİ: "mevcut adet başına standart süre" burada TAHMİNİ bir formülle
-  // (refAdet varsayımıyla) değil, klasmanın GERÇEK işlenmiş verisinden alınır:
-  // veri.toplamStandartSure / veri.toplamAdet — bu, ekranda zaten "STANDART
-  // (ADET BAŞI)" olarak gösterilen, her partinin kendi gerçek adediyle hesaplanmış
-  // doğru değerdir. refAdet sadece klasmanın parti büyüklük profilini özetlemek
-  // (ekranda göstermek) için kullanılır, asıl oran hesabını ETKİLEMEZ — böylece
-  // adetListesi eksik/boş gelse veya refAdet yanlış tahmin edilse bile öneri
-  // her zaman doğru ve tutarlı kalır.
-  const mevcutToplamAdetBasi = veri.toplamStandartSure / veri.toplamAdet;
-
-  // Eğer mevcut standart süre ZATEN hedeften (gerçekleşen × 0.80) düşükse,
-  // klasman zaten yeterince zorlayıcı demektir (standart, gerçekleşenden daha
-  // da düşük bir hedefi bile karşılıyor). Bu durumda oranKatsayi 1'i geçer ve
-  // "öneri" aslında değerleri ARTIRIR — bu, zorlayıcı hedef isteğinin TAM TERSİ
-  // bir etki olur. Bu yüzden oranKatsayi >= 1 ise hiçbir değişiklik önerilmez,
-  // sadece klasmanın zaten hedefi karşıladığı bilgisi gösterilir.
-  const oranKatsayi = mevcutToplamAdetBasi > 0 ? (hedefAdetBasi / mevcutToplamAdetBasi) : 0;
-  const zatenYeterliZorlayici = mevcutToplamAdetBasi > 0 && oranKatsayi >= 1;
-
-  let oneriKontrol, oneriOlcu, oneriKabul;
-  if (zatenYeterliZorlayici) {
-    // Mevcut değerleri olduğu gibi öner (değişiklik yok) — bilgilendirme amaçlı.
-    oneriKontrol = mevcutKontrol;
-    oneriOlcu = mevcutOlcu;
-    oneriKabul = mevcutKabul;
-  } else if (mevcutToplamAdetBasi > 0) {
-    oneriKontrol = Math.max(0, mevcutKontrol * oranKatsayi);
-    oneriOlcu = Math.max(0, mevcutOlcu * oranKatsayi);
-    oneriKabul = Math.max(0, mevcutKabul * oranKatsayi);
-  } else {
-    // Mevcut 3 değer de sıfırsa (klasman hiç doldurulmamışsa) oranlama mümkün
-    // değildir; bu özel durumda hedefin tamamı Kontrol Süresi'ne atanır.
-    oneriKontrol = Math.max(0, hedefAdetBasi - (istasyonSuresi / refAdet));
-    oneriOlcu = 0;
-    oneriKabul = 0;
-  }
-
-  const oneriHtml = zatenYeterliZorlayici ? `
-    <div style="border:1.5px solid #1565C033;border-radius:10px;padding:16px;margin-bottom:8px;background:linear-gradient(135deg,#1565C00D,transparent)">
-      <div style="font-weight:700;font-size:13.5px;color:#1565C0;margin-bottom:4px">✅ Bu klasman zaten yeterince zorlayıcı</div>
-      <div style="font-size:12px;color:var(--navy);line-height:1.6">
-        Mevcut standart süre (<strong>${mevcutToplamAdetBasi.toFixed(2)}sn/adet</strong>), hedeflenen
-        <strong>${hedefAdetBasi.toFixed(2)}sn/adet</strong>'den zaten daha düşük — yani klasman gerçekleşen
-        süreyi istediğinizden de fazla zorluyor. Değerleri büyütmek bu zorlayıcılığı azaltacağından
-        herhangi bir değişiklik önerilmiyor; mevcut 3 değeri olduğu gibi bırakabilirsiniz.
-      </div>
-    </div>` : `
-    <div style="border:1.5px solid #00897B33;border-radius:10px;padding:16px;margin-bottom:8px;background:linear-gradient(135deg,#00897B0D,transparent)">
-      <div style="font-weight:700;font-size:13.5px;color:#00897B;margin-bottom:4px">✓ Önerilen Süreler</div>
-      <div style="font-size:11.5px;color:var(--muted2);margin-bottom:12px;line-height:1.5">Mevcut 3 değerin birbirine oranı korunarak hedefe göre ölçeklendi. Klasmanın mevcut yapısı bozulmuyor, sadece tüm değerler aynı oranda küçültülüyor.</div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-        <div style="background:#fff;border:1px solid var(--border2);border-radius:8px;padding:10px 12px;text-align:center">
-          <div style="font-size:9.5px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">1 Birim Muayene</div>
-          <div style="font-size:19px;font-weight:700;color:var(--navy);font-family:'DM Mono',monospace">${oneriKontrol.toFixed(1)}<span style="font-size:11px;color:var(--muted2)">sn</span></div>
-        </div>
-        <div style="background:#fff;border:1px solid var(--border2);border-radius:8px;padding:10px 12px;text-align:center">
-          <div style="font-size:9.5px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Ölçü Süresi</div>
-          <div style="font-size:19px;font-weight:700;color:var(--navy);font-family:'DM Mono',monospace">${oneriOlcu.toFixed(1)}<span style="font-size:11px;color:var(--muted2)">sn</span></div>
-        </div>
-        <div style="background:#fff;border:1px solid var(--border2);border-radius:8px;padding:10px 12px;text-align:center">
-          <div style="font-size:9.5px;color:var(--muted);text-transform:uppercase;margin-bottom:4px">Ürün Kabul</div>
-          <div style="font-size:19px;font-weight:700;color:var(--navy);font-family:'DM Mono',monospace">${oneriKabul.toFixed(1)}<span style="font-size:11px;color:var(--muted2)">sn</span></div>
-        </div>
-      </div>
-      <button onclick="applyKlasmanSureOnerisi(${k.id}, ${oneriKontrol.toFixed(1)}, ${oneriOlcu.toFixed(1)}, ${oneriKabul.toFixed(1)})"
-        style="width:100%;margin-top:12px;padding:9px;border-radius:8px;border:none;background:#00897B;color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">
-        ✓ Bu Öneriyi Uygula
-      </button>
-    </div>`;
-
-  content.innerHTML = `
-    <div style="background:var(--lblue3);border:1px solid var(--border2);border-radius:9px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:var(--navy);line-height:1.7">
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span style="color:var(--muted)">Gerçekleşen (adet başı, ortalama)</span>
-        <strong style="font-family:'DM Mono',monospace">${gerceklesenAdetBasi.toFixed(2)} sn</strong>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span style="color:var(--muted)">Hedef (%20 zorlayıcı pay ile, = gerçekleşen × 0.80)</span>
-        <strong style="font-family:'DM Mono',monospace;color:#5E35B1">${hedefAdetBasi.toFixed(2)} sn</strong>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted2)">
-        <span>Veri kaynağı</span>
-        <span>${formatTR(veri.toplamAdet)} adet · ${veri.inspectorSayisi || 0} inspector</span>
-      </div>
-    </div>
-
-    ${oneriHtml}
-
-    <div style="font-size:10px;color:var(--muted2);margin-top:4px;line-height:1.6">
-      💡 Öneri, bu klasmanın <strong>gerçek kayıtlarından hesaplanan ortalama parti büyüklüğü (${refAdet} adet)</strong> referans alınarak hesaplanmıştır. Tek tek partilerin büyüklüğü farklılık gösterebileceğinden, uyguladıktan sonra "Hesaplamayı Göster" ile gerçek toplam oranı kontrol edip gerekirse elle ince ayar yapın.
-    </div>
-  `;
-
-  popup.style.display = 'flex';
-}
-
-// Öneriyi tek tıkla 3 input alanına uygular (kaydetmez — input'lara yazar,
-// mevcut onchange="updateX(...)" mantığı zaten devreye girer).
-function applyKlasmanSureOnerisi(klasmanId, kontrol, olcu, kabul) {
-  // Not: her updateX() çağrısı kendi içinde renderEditor() tetikleyip DOM'u
-  // yeniden oluşturduğundan, DOM elementine önceden referans tutmak yerine
-  // doğrudan veri katmanını (klasmanlar dizisini) güncelleyen fonksiyonları
-  // sırayla çağırıyoruz — her biri zaten klasmanlar dizisine yazıp kaydeder.
-  updateUrunKontrol(klasmanId, kontrol);
-  updateOlcuSuresi(klasmanId, olcu);
-  updateUrunKabulSuresi(klasmanId, kabul);
-
-  document.getElementById('klasman-sure-onerisi-popup').style.display = 'none';
-  showFileStatus('✅ Süre önerisi uygulandı — istediğiniz gibi elle ince ayar yapabilirsiniz.', 'var(--green)');
-}
 
 function showPerfSeviyeDetay(seviyeKey) {
   const tanim = PERF_SEVIYE_TANIM[seviyeKey];
@@ -3982,16 +3246,21 @@ function onOvertimeDahilChange() {
   }
 
   // Excel verisi yoksa performansData üzerinde anlık güncelle
+  // (ADET BAZLI: standart süre yerine adet/beklenen-adet oranı kullanılır —
+  // ana performans formülüyle birebir aynı mantık)
   if (performansData && performansData.length > 0) {
     performansData.forEach(row => {
       const normalMesai = row.mesaiSure - (row.overtimeMesaiSure || 0);
-      const standart  = _overtimeDahil
-        ? row.standartSure
-        : (row.standartSureNormal > 0 ? row.standartSureNormal : row.standartSure);
+      const normalAdet  = (row.adet || 0) - (row.toplamOvertimeAdet || 0);
+      const adetPay = _overtimeDahil
+        ? (row.adet || 0)
+        : (normalAdet > 0 ? normalAdet : (row.adet || 0));
       const payda = _overtimeDahil
         ? row.mesaiSure
         : (normalMesai > 0 ? normalMesai : row.mesaiSure);
-      row.genelHizPerf = payda > 0 ? Math.round((standart / payda) * 100) : row.genelHizPerf;
+      const hedefAdetGunluk = row.hedefAdetGunluk || 450;
+      const beklenenAdet = payda > 0 ? hedefAdetGunluk * (payda / GUNLUK_CALISMA_SANIYE) : 0;
+      row.genelHizPerf = (payda > 0 && beklenenAdet > 0) ? Math.round((adetPay / beklenenAdet) * 100) : row.genelHizPerf;
       row.genelPerformans = row.genelHizPerf;
       const hedef = Math.max(1, parseFloat(document.getElementById('inp-verimlilik')?.value) || 100);
       row.verimlilikPerf = row.genelHizPerf !== null ? Math.round(row.genelHizPerf * (100 / hedef)) : null;
@@ -4317,16 +3586,12 @@ function renderInspectorCards() {
         <!-- Süre İstatistikleri -->
         <div class="inspector-stats">
           <div class="inspector-stat">
-            <div class="inspector-stat-value">${fmtSnKisa(inspector.standartSure||0)}</div>
-            <div class="inspector-stat-label" data-i18n="std_duration">Standart Süre</div>
+            <div class="inspector-stat-value">${fmtSnKisa(inspector.mesaiSure||0)}</div>
+            <div class="inspector-stat-label" data-i18n="std_duration">Çalışma Süresi</div>
           </div>
           <div class="inspector-stat">
-            <div class="inspector-stat-value">${fmtSnKisa(inspector.mesaiSure||0)}</div>
-            <div class="inspector-stat-label"><span data-i18n="overtime_duration">Mesai Süresi</span>${
-              inspector.toplamMesaistiSaniye > 0
-                ? `<br><span style="color:#E65100;font-size:9px;font-weight:700">🌙 +${Math.round(inspector.toplamMesaistiSaniye/60)}dk <span data-i18n="overtime_over">mesai üstü</span></span>`
-                : ''
-            }</div>
+            <div class="inspector-stat-value" style="${inspector.toplamMesaistiSaniye > 0 ? 'color:#E65100' : ''}">${inspector.toplamMesaistiSaniye > 0 ? fmtSnKisa(inspector.toplamMesaistiSaniye) : '—'}</div>
+            <div class="inspector-stat-label"><span data-i18n="overtime_duration">Overtime Süresi</span></div>
           </div>
         </div>
 
@@ -4335,10 +3600,10 @@ function renderInspectorCards() {
           <div style="font-size:10px;color:var(--muted2);margin-bottom:4px;text-align:center">
             ${performansAciklama}
           </div>
-          ${inspector.overtimePerformans !== null && inspector.overtimePerformans !== undefined
+          ${(inspector.overtimeMesaiSure || 0) > 0
             ? `<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin:6px 0;padding:5px 10px;background:rgba(230,81,0,.08);border-radius:7px">
                 <span style="font-size:11px;color:#E65100">⏱ Overtime:</span>
-                <span style="font-size:13px;font-weight:700;color:#E65100">${inspector.overtimePerformans}%</span>
+                <span style="font-size:13px;font-weight:700;color:#E65100">${inspector.overtimePerformans !== null && inspector.overtimePerformans !== undefined ? inspector.overtimePerformans+'%' : '—'}</span>
                 <span style="font-size:9px;color:var(--muted2)">(${Math.round((inspector.overtimeMesaiSure||0)/60)}dk ek mesaide)</span>
               </div>`
             : `<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin:6px 0;padding:5px 10px;background:rgba(0,0,0,.03);border-radius:7px">
@@ -4600,18 +3865,17 @@ function exportToExcel() {
   const _exportHedef = Math.max(1, parseFloat(document.getElementById('inp-verimlilik')?.value) || 100);
 
   const mainData = performansData.map(inspector => {
-    const totalHedef = inspector.standartSure || 0;
     // "Ne ödül ne ceza": nötr kayıp zaman mesai süresinden düşülüp performans
     // CANLI Hedef Verimlilik ile yeniden hesaplanır — Dashboard kartlarıyla
-    // (ve diğer tüm ekranlarla) birebir tutarlı olması için. Eskiden burada
-    // sadece durağan inspector.verimlilikPerf kullanılıyordu, bu da Dashboard'da
-    // gösterilenden farklı (eski) bir yüzde vermesine yol açıyordu.
-    const _stdSnEx = inspector.standartSure || 0;
+    // (ve diğer tüm ekranlarla) birebir tutarlı olması için.
+    const _adetEx = inspector.adet || 0;
     let _mesSnEx = inspector.mesaiSure || 0;
     const _kzSnEx = getNotrKayipDakikaForInspector(inspector.ins) * 60;
     if (_kzSnEx > 0 && _mesSnEx > _kzSnEx) _mesSnEx -= _kzSnEx;
-    const _hamPEx = (_stdSnEx > 0 && _mesSnEx > 0)
-      ? Math.round((_stdSnEx / _mesSnEx) * 100) : inspector.genelHizPerf;
+    const _hedefAdetEx = inspector.hedefAdetGunluk || 450;
+    const _beklenenAdetEx = _hedefAdetEx * (_mesSnEx / GUNLUK_CALISMA_SANIYE);
+    const _hamPEx = (_adetEx > 0 && _beklenenAdetEx > 0)
+      ? Math.round((_adetEx / _beklenenAdetEx) * 100) : inspector.genelHizPerf;
     const performans = (_hamPEx !== null && _hamPEx !== undefined)
       ? Math.round(_hamPEx * (100 / _exportHedef)) : (inspector.verimlilikPerf ?? inspector.genelHizPerf ?? 0);
     const ti = getTeknikIncelemeSkorForInspector(inspector.ins);
@@ -4621,8 +3885,8 @@ function exportToExcel() {
       'Inspector': inspector.ins,
       'Toplam Adet': inspector.adet,
       'Kayıt Sayısı': inspector.kayit,
-      'Standart Süre (dk)': Math.round(totalHedef/60),
-      'Mesai Süresi (dk)': Math.round((inspector.mesaiSure||0)/60),
+      'Çalışma Süresi (dk)': Math.round((inspector.mesaiSure||0)/60),
+      'Overtime Süresi (dk)': Math.round((inspector.overtimeMesaiSure||0)/60),
       'Verimlilik Perf (%)': performans,
       'Teknik İnceleme Skoru (%)': (ti && ti.count > 0) ? ti.percent : '—',
       'İkinci Insp. Geçti/Toplam Oranı (%)': ii.percent !== null ? ii.percent : '—',
@@ -5611,8 +4875,8 @@ function renderPerfTabloFromData(page) {
         ${[
           ['📦','Adet',formatTR(row.adet||0)],
           ['📋','Kayıt',row.kayit||0],
-          ['⏱','Standart',fmtSure(row.standartSure)],
-          ['🕐','Mesai',fmtSure(row.mesaiSure) + (row.toplamMesaistiSaniye > 0 ? ` 🌙+${Math.round(row.toplamMesaistiSaniye/60)}dk` : '')]
+          ['⏱','Çalışma',fmtSure(row.mesaiSure)],
+          ['🌙','Overtime',row.toplamMesaistiSaniye > 0 ? fmtSure(row.toplamMesaistiSaniye) : '—']
         ].map(([ic,lb,val])=>`
           <div style="background:rgba(255,255,255,.75);border:1px solid var(--border2);border-radius:8px;
             padding:7px 8px;display:flex;align-items:center;gap:7px;">
@@ -5664,7 +4928,7 @@ function renderPerfTabloFromData(page) {
             <span><span data-i18n="avg_work_days">📆 Avg. Working:</span> <strong style="color:var(--navy)">${ortalamaGun} gün</strong></span>
           </div>
           <div style="font-size:10px;color:var(--green);margin-top:4px;">
-            ✅ <span data-i18n='perf_formula'>Std Duration ÷ (Days × 7.5h) × 100</span>
+            ✅ <span data-i18n='perf_formula'>Kontrol Edilen Adet ÷ Beklenen Adet × 100</span>
             ${hedef !== 100 ? `&nbsp;·&nbsp; <span style="color:var(--amber)">⚡ <span data-i18n='adj_formula'>Raw Perf × (100÷${hedef})</span></span>` : ''}
           </div>
         </div>
@@ -6526,10 +5790,20 @@ function performansHesapla(){
       });
     }
 
-    // Overtime performansi: sadece 16:45 sonrasi calisilan sure ve o surede tamamlanan standart sure
+    // Overtime performansı: ADET BAZLI — standart süre yerine, o overtime
+    // süresine orantılanmış beklenen adet ile karşılaştırılır (ana performans
+    // formülüyle birebir aynı mantık). ÖNEMLİ DÜZELTME: eskiden bu hesap
+    // toplamStandartSureOvertime > 0 şartına bağlıydı; Klasman Yönetimi
+    // kaldırılıp klasmanlar otomatik (sıfır süreyle) tanınmaya başlayınca bu
+    // değer HER ZAMAN 0 kaldı ve "Overtime Yok" rozetleri gerçek overtime
+    // olsa bile yanlışlıkla hep görünmeye devam etti. Artık adet üzerinden
+    // hesaplandığı için standart süreden bağımsız, her zaman doğru çalışır.
     const overtimeMesaiSn = mesaiHesap ? (mesaiHesap.toplamMesaistiSaniye || 0) : 0;
-    const overtimePerformans = (overtimeMesaiSn > 0 && toplamStandartSureOvertime > 0)
-      ? Math.round((toplamStandartSureOvertime / overtimeMesaiSn) * 100)
+    const beklenenOvertimeAdet = overtimeMesaiSn > 0
+      ? hedefAdetGunluk * (overtimeMesaiSn / GUNLUK_CALISMA_SANIYE)
+      : 0;
+    const overtimePerformans = (overtimeMesaiSn > 0 && beklenenOvertimeAdet > 0)
+      ? Math.round(((inspectorData.toplamOvertimeAdet || 0) / beklenenOvertimeAdet) * 100)
       : null;
 
     // 2.Kalite kontrollerinin KENDİ performansı — yalnızca gösterim amaçlı.
@@ -6608,91 +5882,6 @@ function performansHesapla(){
   //  - Ayar değiştirirken Sheets'e art arda istek atılmaz (race condition önlenir)
   //  - Detay modalında yanlışlıkla eski/yarım veri görünmesi engellenir
   
-  const satirlar=liste.map((row,i)=>{
-    const ini=row.ins.split(' ').map(w=>w[0]||'').slice(0,2).join('').toUpperCase();
-    
-    const performans = row.genelHizPerf ?? 0;
-    const performansClass = getPerformanceClass(performans);
-    
-    const klasmanDetay = Object.entries(row.klasmanlar)
-      .map(([k,v]) => {
-        const klasmanPerf = v.hizPerf ?? 0;
-        return `${k}: ${v.adet} adet (${klasmanPerf}%)`;
-      })
-      .join('<br>');
-    
-    const fmtSure = (sn) => {
-      if (!sn) return '—';
-      const s = Math.round(sn);
-      const h = Math.floor(s / 3600);
-      const m = Math.floor((s % 3600) / 60);
-      const sc = s % 60;
-      return h > 0
-        ? `${h}s ${String(m).padStart(2,'0')}d ${String(sc).padStart(2,'0')}sn`
-        : `${m}d ${String(sc).padStart(2,'0')}sn`;
-    };
-    
-    const tarihDurumu = row.tarihBasariliKayit > 0 ? `✅ ${row.tarihBasariliKayit}/${row.kayit}` : `⚠️ Tarih yok`;
-    const vPerf = row.verimlilikPerf;
-    const vPerfClass = vPerf === null ? '' : getPerformanceClass(vPerf);
-    const verimlilikHedef3 = Math.max(1, parseFloat(document.getElementById('inp-verimlilik')?.value) || 100);
-    
-    return `<tr>
-      <td><div style="display:flex;align-items:center;gap:9px">
-        <div class="avatar">${ini}</div>
-        <div>
-          <strong style="font-size:13px">${row.ins}</strong>
-          <div style="font-size:10px;color:var(--muted2)">${row.gunSayisi || 0} ${(translations[currentLang]||translations.tr).working} · ${tarihDurumu}</div>
-        </div>
-      </div></td>
-      <td style="color:var(--muted);font-family:'DM Mono',monospace">${row.kayit}</td>
-      <td style="font-family:'DM Mono',monospace">${row.adet.toFixed(0)}</td>
-      <td style="font-family:'DM Mono',monospace">${fmtSure(row.standartSure)}</td>
-      <td style="font-family:'DM Mono',monospace">${fmtSure(row.mesaiSure)}</td>
-      <td style="font-family:'DM Mono',monospace">
-        <div>
-          <span class="${performansClass}" style="font-weight:700;font-size:14px">${performans !== null ? performans+'%' : '—'}</span>
-          <div style="font-size:9px;color:var(--muted);margin-top:1px">
-            ${row.gunSayisi || 0} ${(translations[currentLang]||translations.tr).days_x_formula.replace('{h}', Math.round((row.mesaiSure||0)/3600))}
-          </div>
-        </div>
-      </td>
-      <td style="font-family:'DM Mono',monospace;background:${verimlilikHedef3 !== 100 ? 'linear-gradient(135deg,#FFFDE7,#fff)' : 'transparent'}">
-        <div>
-          <span class="${vPerfClass}" style="font-weight:700;font-size:14px">${vPerf !== null ? vPerf+'%' : '—'}</span>
-          <div style="font-size:9px;color:var(--muted);margin-top:1px">
-            ${performans !== null && verimlilikHedef3 !== 100 ? `${performans}% × (100÷${verimlilikHedef3})` : verimlilikHedef3 === 100 ? 'Hedef=%100 (aynı)' : '—'}
-          </div>
-        </div>
-      </td>
-      <td style="font-size:11px;color:var(--muted2);max-width:200px" title="${klasmanDetay.replace(/<br>/g, ', ')}">${klasmanDetay}</td>
-    </tr>`;
-  }).join('');
-
-  const toplamKayit = excelRows.filter(row => {
-    const excelKlasman = String(row[klasmanCol]||'').trim();
-    const klasmanKey = normalize(excelKlasman);
-    return klasmanMap[klasmanKey];
-  }).length;
-
-  const ortPerformans = liste.length > 0 ?
-    Math.round(liste.reduce((sum, row) => sum + (row.genelHizPerf ?? 0), 0) / liste.length) : 0;
-
-  const ortalamaGun = liste.length > 0 ? 
-    Math.round(liste.reduce((sum, row) => sum + (row.gunSayisi || 0), 0) / liste.length) : 0;
-
-  const ortVPerf = liste.length > 0 ?
-    Math.round(liste.reduce((sum, row) => sum + (row.verimlilikPerf ?? 0), 0) / liste.length) : 0;
-
-  // Verimlilik ortalama kutusunu güncelle
-  const vOrtEl = document.getElementById('verimlilik-ort');
-  if (vOrtEl) {
-    vOrtEl.textContent = ortVPerf + '%';
-    vOrtEl.style.color = getProgressColor(ortVPerf);
-  }
-
-  const verimlilikHedef2 = Math.max(1, parseFloat(document.getElementById('inp-verimlilik')?.value) || 100);
-
   // performansData güncellendi; sayfalı kart renderını çağır
   _perfPage = 1;
   renderPerfTabloFromData(1);
@@ -7047,14 +6236,11 @@ function showSlide(index) {
 
   // Overtime hesapları
   const otMesaiSn   = inspector.overtimeMesaiSure || 0;
-  const otStdSn     = inspector.standartSureOvertime || 0;
   const otPerf       = inspector.overtimePerformans;
   const hasOvertime  = otMesaiSn > 0;
-  // Overtime'da kontrol edilen tahmini adet: toplam adedin, overtime standart süre / toplam standart süre oranı kadarı
-  let otAdetTahmini = null;
-  if (hasOvertime && inspector.standartSure > 0 && otStdSn > 0) {
-    otAdetTahmini = Math.round((inspector.adet || 0) * (otStdSn / inspector.standartSure));
-  }
+  // Overtime'da kontrol edilen GERÇEK adet (tahmin değil — Excel'den satır
+  // satır izlenip biriktiriliyor, bkz. inspectorMap[ins].toplamOvertimeAdet)
+  const otAdetGercek = hasOvertime ? (inspector.toplamOvertimeAdet || 0) : null;
   const otColor = otPerf === null || otPerf === undefined ? 'rgba(255,255,255,.4)'
     : getProgressColor(otPerf);
 
@@ -7071,8 +6257,8 @@ function showSlide(index) {
           <div class="slide-overtime-stat-label">Verimlilik</div>
         </div>
         <div class="slide-overtime-stat">
-          <div class="slide-overtime-stat-value">${otAdetTahmini !== null ? formatTR(otAdetTahmini) : '—'}</div>
-          <div class="slide-overtime-stat-label">Kontrol Edilen (tah.)</div>
+          <div class="slide-overtime-stat-value">${otAdetGercek !== null ? formatTR(otAdetGercek) : '—'}</div>
+          <div class="slide-overtime-stat-label">Kontrol Edilen</div>
         </div>
       </div>
     </div>` : `
@@ -7119,7 +6305,7 @@ function showSlide(index) {
               <div class="inspector-slide-stat-label">${t.record_count}</div>
             </div>
             <div class="inspector-slide-stat">
-              <div class="inspector-slide-stat-value">${fmtSnKisa(inspector.standartSure||0)}</div>
+              <div class="inspector-slide-stat-value">${fmtSnKisa(inspector.mesaiSure||0)}</div>
               <div class="inspector-slide-stat-label">${t.std_duration}</div>
             </div>
             <div class="inspector-slide-stat">
@@ -7720,11 +6906,10 @@ console.log(`
 ║                                                                                                              ║
 ║  🎯 Inspector performanslarını analiz edin                                                                   ║
 ║  📊 Excel verilerini yükleyin ve raporlayın                                                                 ║
-║  ⚙️  Klasman tanımlarını yönetin                                                                             ║
 ║  🎬 Canlı gösterim ile büyük ekranda izleyin                                                                ║
 ║                                                                                                              ║
-║  ✅ Performans Hesaplama: Standart Süre ÷ Mesai Süresi × 100                                                ║
-║  📅 Mesai Süresi: Günlük 7.5 saat × çalışma gün sayısı                                                     ║
+║  ✅ Performans Hesaplama: Kontrol Edilen Adet ÷ Beklenen Adet × 100                                         ║
+║  📅 Beklenen Adet: Günlük Hedef Adet × (Mesai Süresi ÷ 7.5 saat)                                            ║
 ║  🎯 Hedef: %100 = tam verimlilik, %100+ = hedeften hızlı                                                    ║
 ║                                                                                                              ║
 ║  📺 CANLI GÖSTERİM KLAVYE KOMUTLARI (Tam Ekranda):                                                          ║
@@ -8149,26 +7334,28 @@ if (window.location.hostname === 'localhost' || window.location.hostname === '12
           ins: 'Ahmet YILMAZ',
           adet: 150,
           kayit: 8,
-          standartSure: 7200,
           mesaiSure: 8100,
+          overtimeMesaiSure: 0,
+          hedefAdetGunluk: 450,
           genelHizPerf: 89,
           gunSayisi: 3,
           klasmanlar: {
-            'Pantolon': { adet: 100, standartSure: 4800, hizPerf: 92 },
-            'Ceket': { adet: 50, standartSure: 2400, hizPerf: 85 }
+            'Pantolon': { adet: 100, hizPerf: 92 },
+            'Ceket': { adet: 50, hizPerf: 85 }
           }
         },
         {
           ins: 'Fatma KAYA',
           adet: 200,
           kayit: 12,
-          standartSure: 9600,
           mesaiSure: 9000,
+          overtimeMesaiSure: 1800,
+          hedefAdetGunluk: 450,
           genelHizPerf: 107,
           gunSayisi: 4,
           klasmanlar: {
-            'Pantolon': { adet: 120, standartSure: 5760, hizPerf: 105 },
-            'Mont': { adet: 80, standartSure: 3840, hizPerf: 110 }
+            'Pantolon': { adet: 120, hizPerf: 105 },
+            'Mont': { adet: 80, hizPerf: 110 }
           }
         }
       ];
@@ -8185,185 +7372,6 @@ if (window.location.hostname === 'localhost' || window.location.hostname === '12
 console.log(`✅  Inspection Performans Paneli v${APP_VERSION} hazır!`);
 console.log(`📊 ${klasmanlar.length} klasman, ${performansData.length} inspector verisi yüklendi`);
 // ════════════════════════════════════════════════════════════════════
-// KLASMAN ANALİZ — SHEETS ENTEGRASYONU
-// ════════════════════════════════════════════════════════════════════
-
-async function pushKlasmanAnalizToSheets(liste) {
-  if (SHEETS_DEVRE_DISI) return;
-  const url   = appConfig.sheetsWebAppUrl;
-  const token = appConfig.sheetsApiToken;
-  if (!url || !token || !liste || !liste.length) return;
-  try {
-    const payload = liste.map(k => ({
-      ad:                  k.ad,
-      standartKontrolSure: k.standartKontrolSure || 0,
-      istasyonSuresi:      k.istasyonSure        || 0,
-      gerceklesenOrt:      (k.toplamAdet > 0 && k.toplamFiiliSure > 0)
-                           ? parseFloat((k.toplamFiiliSure / k.toplamAdet).toFixed(3)) : 0,
-      toplamAdet:          k.toplamAdet          || 0,
-      inspectorSayisi:     k.inspectorSayisi     || 0,
-      toplamFiiliSure:     k.toplamFiiliSure     || 0,
-      toplamStandartSure:  k.toplamStandartSure  || 0,
-      oranToplam:          (k.toplamStandartSure > 0 && k.toplamFiiliSure > 0)
-                           ? parseFloat((k.toplamFiiliSure / k.toplamStandartSure).toFixed(4)) : null
-    }));
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'setKlasmanAnaliz', token, klasmanAnaliz: payload, savedAt: new Date().toISOString() }),
-      mode: 'no-cors'
-    });
-    console.log('✅ Klasman analiz Sheets\'e gönderildi:', payload.length, 'klasman');
-  } catch(err) {
-    console.warn('Klasman analiz push hatası:', err.message);
-  }
-}
-
-async function pushAndRenderKlasmanAnaliz() {
-  renderKlasmanAnaliz();          // Önce hesapla & render et (içinde push var)
-  showSuccessMessage((translations[currentLang]||translations.tr).sheets_analiz_sent);
-}
-
-async function pullKlasmanAnalizFromSheets() {
-  const url   = appConfig.sheetsWebAppUrl;
-  const token = appConfig.sheetsApiToken;
-  if (!url || !token) {
-    alert('⚠️ Sheets bağlantısı yapılandırılmamış!\nKlasman Yönetimi → Bağlantı Ayarları bölümünden URL ve Token girin.');
-    return;
-  }
-  const btn = document.getElementById('kla-pull-btn');
-  const orig = btn ? btn.innerHTML : '';
-  if (btn) { btn.innerHTML = (translations[currentLang]||translations.tr).pulling; btn.disabled = true; }
-  try {
-    const data = await jsonpFetch(url, { action: 'getKlasmanAnaliz', token });
-    if (data.status === 'ok' && Array.isArray(data.klasmanAnaliz) && data.klasmanAnaliz.length > 0) {
-      // Sheets'ten gelen veriyi _klAnalizTumListe'ye de yaz (Süre Önerisi için)
-      _klAnalizTumListe = data.klasmanAnaliz.map(k => ({
-        ad:                k.ad,
-        toplamAdet:        k.toplamAdet        || 0,
-        toplamFiiliSure:   k.toplamFiiliSure   || 0,
-        toplamStandartSure:k.toplamStandartSure|| 0,
-        inspectorSayisi:   k.inspectorSayisi   || 0,
-        standartKontrolSure: k.standartKontrolSure || 0,
-        istasyonSure:      k.istasyonSuresi    || 0,
-        kayitSayisi:       0,
-        adetListesi:       []
-      }));
-
-      // Sheets'ten gelen veriyi ekranda göster
-      const el = document.getElementById('klasman-analiz-icerik');
-      if (!el) return;
-
-      const liste = data.klasmanAnaliz;
-
-      const kartlar = liste.map(k => {
-        const std          = k.standartKontrolSure || 0;
-        const toplamOran   = (k.toplamStandartSure > 0 && k.toplamFiiliSure > 0)
-                             ? k.toplamFiiliSure / k.toplamStandartSure : null;
-        const gerceklesen  = k.gerceklesenOrt > 0
-                             ? k.gerceklesenOrt
-                             : (k.toplamAdet > 0 && k.toplamFiiliSure > 0
-                                ? k.toplamFiiliSure / k.toplamAdet : 0);
-        const fark         = gerceklesen > 0 && std > 0 ? gerceklesen - std : null;
-        const farkYuzde    = fark !== null && std > 0 ? Math.round((fark / std) * 100) : null;
-        const barGenislik  = toplamOran !== null
-                             ? Math.min(200, Math.round(toplamOran * 100))
-                             : (gerceklesen > 0 && std > 0 ? Math.min(200, Math.round((gerceklesen / std) * 100)) : 0);
-        const barRenk      = toplamOran === null && fark === null ? 'var(--muted2)'
-                             : (toplamOran !== null ? toplamOran : (gerceklesen / (std||1))) <= 1 ? '#00897B'
-                             : (toplamOran !== null ? toplamOran : (gerceklesen / (std||1))) <= 1.2 ? '#F57F17' : '#C62828';
-        const farkIkon     = toplamOran === null && fark === null ? '—'
-                             : (toplamOran !== null ? toplamOran <= 1 : fark !== null && fark <= 0)
-                               ? '▼ Hedef Altında ✓' : '▲ Hedef Üstünde';
-
-        return `
-        <div style="background:#fff;border:1.5px solid var(--border2);border-radius:14px;padding:20px;box-shadow:var(--shadow);position:relative;overflow:hidden;">
-          <div style="position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,${barRenk},${barRenk}88);border-radius:14px 14px 0 0;"></div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-            <div>
-              <div style="font-size:15px;font-weight:700;color:var(--navy);">${k.ad}</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:2px;">${formatTR((k.toplamAdet||0))} adet · ${k.inspectorSayisi||0} inspector</div>
-            </div>
-            <div style="text-align:right;">
-              <div style="font-size:22px;font-weight:800;color:${barRenk};font-family:'DM Mono',monospace;line-height:1;">${gerceklesen > 0 ? gerceklesen.toFixed(2)+'sn' : '—'}</div>
-              <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:2px;">Gerçekleşen/Adet</div>
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
-            <div style="background:var(--lblue3);border:1px solid var(--border2);border-radius:10px;padding:12px 14px;">
-              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">📐 Standart</div>
-              <div style="font-size:18px;font-weight:700;color:var(--navy);font-family:'DM Mono',monospace;">${std > 0 ? std.toFixed(2)+'sn' : '—'}</div>
-              <div style="font-size:10px;color:var(--muted2);margin-top:3px;">1 adet ürün kontrol</div>
-              ${k.istasyonSuresi > 0 ? `<div style="font-size:10px;color:var(--muted2);margin-top:1px;">+ ${k.istasyonSuresi.toFixed(2)}sn istasyon</div>` : ''}
-            </div>
-            <div style="background:${fark!==null&&fark<=0?'var(--lgreen)':fark!==null&&fark<=std*0.2?'var(--lamber)':'var(--lred)'};border:1px solid ${fark!==null&&fark<=0?'#B2DFDB':fark!==null&&fark<=std*0.2?'#FFE082':'#FFCDD2'};border-radius:10px;padding:12px 14px;">
-              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">⏱ Gerçekleşen</div>
-              <div style="font-size:18px;font-weight:700;color:${barRenk};font-family:'DM Mono',monospace;">${gerceklesen > 0 ? gerceklesen.toFixed(2)+'sn' : '—'}</div>
-              <div style="font-size:10px;color:${barRenk};margin-top:3px;font-weight:600;">${fark !== null ? (fark>0?'+':'')+fark.toFixed(2)+'sn fark' : '—'}${farkYuzde !== null ? ` (${fark>0?'+':''}${farkYuzde}%)` : ''}</div>
-            </div>
-          </div>
-          <div style="margin-bottom:10px;">
-            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-bottom:4px;">
-              <span>Gerçekleşen / Standart oranı</span>
-              <span style="font-weight:600;color:${barRenk}">${barGenislik}%</span>
-            </div>
-            <div style="height:8px;background:var(--border2);border-radius:4px;overflow:hidden;">
-              <div style="width:${Math.min(100,barGenislik)}%;height:100%;background:${barRenk};border-radius:4px;"></div>
-            </div>
-          </div>
-          <div style="text-align:center;padding:6px 12px;border-radius:8px;background:${fark!==null&&fark<=0?'var(--lgreen)':fark!==null?'var(--lred)':'var(--offwhite)'};border:1px solid ${fark!==null&&fark<=0?'#B2DFDB':fark!==null?'#FFCDD2':'var(--border2)'};">
-            <span style="font-size:11px;font-weight:700;color:${barRenk};">${farkIkon}</span>
-          </div>
-        </div>`;
-      }).join('');
-
-      const hedefte   = liste.filter(k => k.gerceklesenOrt > 0 && k.standartKontrolSure > 0 && k.gerceklesenOrt <= k.standartKontrolSure).length;
-      const yakin     = liste.filter(k => { const g=k.gerceklesenOrt,s=k.standartKontrolSure; return g>0&&s>0&&g>s&&g<=s*1.2; }).length;
-      const yuksek    = liste.filter(k => { const g=k.gerceklesenOrt,s=k.standartKontrolSure; return g>0&&s>0&&g>s*1.2; }).length;
-      const veriYok   = liste.filter(k => !k.gerceklesenOrt || !k.standartKontrolSure).length;
-
-      el.innerHTML = `
-        <div style="background:linear-gradient(135deg,var(--navy) 0%,var(--blue) 100%);border-radius:12px;padding:16px 22px;margin-bottom:20px;display:flex;align-items:center;gap:24px;flex-wrap:wrap;">
-          <div style="font-size:28px;">🎯</div>
-          <div style="flex:1;">
-            <div style="font-size:15px;font-weight:700;color:#fff;" data-i18n="klasman_analiz_overlay_title">Classification Analysis — Fetched from Sheets</div>
-            <div style="font-size:11px;color:rgba(255,255,255,.6);margin-top:3px;">${liste.length} klasman · ${formatTR(liste.reduce((s,k)=>s+(k.toplamAdet||0),0))} toplam adet</div>
-          </div>
-          ${[['✅','Hedefte',hedefte,'#4CAF50'],['⚠️','Yakın',yakin,'#FFB74D'],['🔴','Yüksek',yuksek,'#EF9A9A'],['➖','Veri Yok',veriYok,'rgba(255,255,255,.5)']].map(([ic,lb,cnt,col])=>`
-          <div style="text-align:center;background:rgba(255,255,255,.1);border-radius:10px;padding:10px 16px;min-width:80px;">
-            <div style="font-size:16px;">${ic}</div>
-            <div style="font-size:20px;font-weight:800;color:${col};font-family:'DM Mono',monospace;line-height:1.2;">${cnt}</div>
-            <div style="font-size:9px;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.5px;">${lb}</div>
-          </div>`).join('')}
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;">${kartlar}</div>
-      `;
-      showSuccessMessage(`✅ ${liste.length} ` + (translations[currentLang]||translations.tr).sheets_analiz_loaded);
-    } else {
-      alert('ℹ️ Sheets\'te henüz klasman analiz verisi yok.\n\nÖnce "📤 Sheets\'e Gönder & Yenile" butonuna basın.');
-    }
-  } catch(err) {
-    alert('❌ Veri çekilemedi: ' + err.message);
-  } finally {
-    if (btn) { btn.innerHTML = orig; btn.disabled = false; }
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// KULLANICI YÖNETİMİ
-// ══════════════════════════════════════════════════════════════════════════════
-// _usersCache: Users sekmesinden çekilen [{username, tabs:[...]}] listesi (admin
-// hariç). Şifreler güvenlik nedeniyle sunucudan geri okunmaz; sadece admin yeni
-// bir şifre belirlediğinde sunucuya gönderilir, aksi halde mevcut şifre korunur.
-// NOT: _usersCache ve _editingUsername artık dosyanın ÜSTÜNDE (global değişkenler
-// bölümünde) tanımlanıyor — bu fonksiyonlar dosyanın altında olsa da, sayfa açılışında
-// üst seviyede çağrılan renderDashboard() → renderTeamManagersSection() zinciri bu
-// değişkene erişiyor; let ile alttaki bir tanım kullanılırsa TDZ (Temporal Dead Zone)
-// ReferenceError'a yol açar.
-
-// Kullanıcı adını ("fatma.dogan", "ali_kirna" gibi) okunabilir bir görünen
-// ada çevirir: noktalar/alt çizgiler boşluğa dönüştürülür ve her kelimenin
-// ilk harfi büyütülür. "fatma.dogan" → "Fatma Dogan".
 function _formatDisplayName(username) {
   if (!username) return username;
   return String(username)
@@ -8597,12 +7605,14 @@ function getInspectorsForTeam(teamArr) {
     .map(inspector => {
       // "Ne ödül ne ceza": nötr kayıp zaman mesai süresinden düşülüp
       // performans buna göre hesaplanır — Dashboard ile tutarlı olması için.
-      const _stdSnT = inspector.standartSure || 0;
+      const _adetT = inspector.adet || 0;
       let _mesSnT = inspector.mesaiSure || 0;
       const _kzSnT = getNotrKayipDakikaForInspector(inspector.ins) * 60;
       if (_kzSnT > 0 && _mesSnT > _kzSnT) _mesSnT -= _kzSnT;
-      const _hamPT = (_stdSnT > 0 && _mesSnT > 0)
-        ? Math.round((_stdSnT / _mesSnT) * 100) : inspector.genelHizPerf;
+      const _hedefAdetT = inspector.hedefAdetGunluk || 450;
+      const _beklenenAdetT = _hedefAdetT * (_mesSnT / GUNLUK_CALISMA_SANIYE);
+      const _hamPT = (_adetT > 0 && _beklenenAdetT > 0)
+        ? Math.round((_adetT / _beklenenAdetT) * 100) : inspector.genelHizPerf;
       return {
         ...inspector,
         performans: (_hamPT !== null && _hamPT !== undefined)
