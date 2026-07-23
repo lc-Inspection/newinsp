@@ -2916,6 +2916,7 @@ function showPage(id, navEl){
   if(id === 'dashboard') {
     renderDashboard();
   } else if(id === 'ceyrek-performans') {
+    populateCeyrekEkipFiltre();
     renderCeyrekPerformansTablosu(true);
   } else if(id === 'canli') {
     initCanliPage();
@@ -3265,15 +3266,28 @@ async function ceyrekVerisiGonder(event) {
 }
 
 function _ceyrekMetrikHucre(veri) {
-  if (!veri) return '<span style="color:var(--muted2);font-size:14px">— veri yok —</span>';
+  if (!veri) return '<span style="color:var(--muted2);font-size:15px">— veri yok —</span>';
   const renk = (v, tersMi) => v === null || v === undefined ? 'var(--muted2)'
     : (v >= 85 ? '#00897B' : v >= 70 ? '#F57F17' : v >= 50 ? '#EF5350' : '#B71C1C');
   return `
-    <div style="font-size:13px;line-height:2.1">
-      <div><span style="color:var(--muted)">Verimlilik:</span> <strong style="font-size:15px;color:${renk(veri.verimlilik)}">${veri.verimlilik !== null && veri.verimlilik !== undefined ? veri.verimlilik + '%' : '—'}</strong></div>
-      <div><span style="color:var(--muted)">İkinci Insp.:</span> <strong style="font-size:15px;color:${renk(veri.ikinciInsp)}">${veri.ikinciInsp !== null && veri.ikinciInsp !== undefined ? veri.ikinciInsp + '%' : '—'}</strong></div>
-      <div><span style="color:var(--muted)">Teknik Skor:</span> <strong style="font-size:15px;color:${renk(veri.teknikSkor)}">${veri.teknikSkor !== null && veri.teknikSkor !== undefined ? veri.teknikSkor + '%' : '—'}</strong></div>
+    <div style="font-size:15px;line-height:2.2">
+      <div><span style="color:var(--muted)">Verimlilik:</span> <strong style="font-size:18px;color:${renk(veri.verimlilik)}">${veri.verimlilik !== null && veri.verimlilik !== undefined ? veri.verimlilik + '%' : '—'}</strong></div>
+      <div><span style="color:var(--muted)">İkinci Insp.:</span> <strong style="font-size:18px;color:${renk(veri.ikinciInsp)}">${veri.ikinciInsp !== null && veri.ikinciInsp !== undefined ? veri.ikinciInsp + '%' : '—'}</strong></div>
+      <div><span style="color:var(--muted)">Teknik Skor:</span> <strong style="font-size:18px;color:${renk(veri.teknikSkor)}">${veri.teknikSkor !== null && veri.teknikSkor !== undefined ? veri.teknikSkor + '%' : '—'}</strong></div>
     </div>`;
+}
+
+// Ekip Yöneticisi filtre dropdown'ını doldurur — _usersCache'teki "team"
+// alanına sahip (yani en az bir inspector'ı yöneten) kullanıcıları listeler.
+async function populateCeyrekEkipFiltre() {
+  const sel = document.getElementById('ceyrek-ekip-filtre');
+  if (!sel) return;
+  if (!_usersCache.length) await _silentLoadUsersCache();
+  const managers = _usersCache.filter(u => (u.team || []).length > 0);
+  const oncekiSecim = sel.value;
+  sel.innerHTML = '<option value="">👥 Tüm Ekip Yöneticileri</option>' +
+    managers.map(u => `<option value="${_escapeHtml(u.username)}">${_escapeHtml(_formatDisplayName(u.username))} (${u.team.length} kişi)</option>`).join('');
+  if (oncekiSecim && managers.some(u => u.username === oncekiSecim)) sel.value = oncekiSecim;
 }
 
 let _ceyrekSayfa = 1;
@@ -3289,9 +3303,19 @@ function renderCeyrekPerformansTablosu(sifirlaSayfa) {
     (a.displayName || '').localeCompare(b.displayName || '', 'tr'));
 
   const filtreMetni = (document.getElementById('ceyrek-arama')?.value || '').toLowerCase().trim();
-  const filtreli = filtreMetni
-    ? kayitlar.filter(k => (k.displayName || '').toLowerCase().includes(filtreMetni))
-    : kayitlar;
+  const secilenEkipYoneticisi = document.getElementById('ceyrek-ekip-filtre')?.value || '';
+
+  let filtreli = kayitlar;
+
+  if (secilenEkipYoneticisi) {
+    const yonetici = _usersCache.find(u => u.username === secilenEkipYoneticisi);
+    const ekipUyeleri = (yonetici?.team || []).map(ad => String(ad).toLowerCase().trim());
+    filtreli = filtreli.filter(k => ekipUyeleri.includes(String(k.displayName || '').toLowerCase().trim()));
+  }
+
+  if (filtreMetni) {
+    filtreli = filtreli.filter(k => (k.displayName || '').toLowerCase().includes(filtreMetni));
+  }
 
   document.getElementById('ceyrek-toplam-sayac').textContent = filtreli.length + ' inspector';
 
@@ -3310,11 +3334,11 @@ function renderCeyrekPerformansTablosu(sifirlaSayfa) {
 
   tbody.innerHTML = sayfaKayitlari.map((k, i) => `
     <tr style="background:${i % 2 === 0 ? '#fff' : '#F9FBFF'};border-bottom:1px solid var(--border2)">
-      <td style="padding:14px 16px;font-weight:700;font-size:15px;color:var(--navy);white-space:nowrap">${_escapeHtml(_formatDisplayName(k.displayName))}</td>
-      <td style="padding:14px 16px;border-left:3px solid #90CAF9">${_ceyrekMetrikHucre(k.Q1)}</td>
-      <td style="padding:14px 16px;border-left:3px solid #A5D6A7">${_ceyrekMetrikHucre(k.Q2)}</td>
-      <td style="padding:14px 16px;border-left:3px solid #FFCC80">${_ceyrekMetrikHucre(k.Q3)}</td>
-      <td style="padding:14px 16px;border-left:3px solid #EF9A9A">${_ceyrekMetrikHucre(k.Q4)}</td>
+      <td style="padding:16px 18px;font-weight:700;font-size:17px;color:var(--navy);white-space:nowrap">${_escapeHtml(_formatDisplayName(k.displayName))}</td>
+      <td style="padding:16px 18px;border-left:3px solid #90CAF9">${_ceyrekMetrikHucre(k.Q1)}</td>
+      <td style="padding:16px 18px;border-left:3px solid #A5D6A7">${_ceyrekMetrikHucre(k.Q2)}</td>
+      <td style="padding:16px 18px;border-left:3px solid #FFCC80">${_ceyrekMetrikHucre(k.Q3)}</td>
+      <td style="padding:16px 18px;border-left:3px solid #EF9A9A">${_ceyrekMetrikHucre(k.Q4)}</td>
     </tr>`).join('');
 
   _renderCeyrekSayfalama(filtreli.length, totalPages);
