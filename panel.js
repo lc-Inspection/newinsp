@@ -4897,7 +4897,15 @@ function excelYukle(e){
   const reader=new FileReader();
   reader.onload=function(ev){
     try{
-      const wb=XLSX.read(ev.target.result,{type:'binary'});
+      // ÖNEMLİ DÜZELTME: cellDates:true eklendi. Bu olmadan, tarih hücreleri
+      // SheetJS tarafından KENDİ VARSAYILAN FORMATIYLA (bazen gün/ay sırası
+      // belirsiz, örn. "7/1/2026") METİN olarak dönüyordu — bu da bazı
+      // satırlarda gün/ay'ın YANLIŞ sırayla okunmasına (örn. 1 Temmuz yerine
+      // 7 Ocak) yol açabiliyordu. Bu, o satırın YANLIŞ örnekleme/seviyelendirme
+      // dönemine düşmesine ve dolayısıyla Toplam Adet'in yanlış çıkmasına
+      // sebep oluyordu. cellDates:true ile artık tarih hücreleri doğrudan JS
+      // Date nesnesi olarak geliyor — hiçbir string/format belirsizliği kalmıyor.
+      const wb=XLSX.read(ev.target.result,{type:'binary', cellDates:true});
       const ws=wb.Sheets[wb.SheetNames[0]];
       const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
       
