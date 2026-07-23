@@ -552,6 +552,11 @@ const GUNLUK_CALISMA_SANIYE = 7.5 * 3600; // 7.5 saat = 27000 saniye
 // VERI YAPILARI
 // ────────────────────────────
 let klasmanlar = [];
+// ── ÇEYREK (QUARTER) PERFORMANS ARŞİVİ ───────────────────────────────────
+// Dashboard/Teknik İnceleme'deki ham veriden TAMAMEN BAĞIMSIZ, kalıcı bir
+// arşiv. Yapı: { [inspectorKey]: { displayName, Q1:{...}, Q2:{...}, Q3:{...}, Q4:{...} } }
+// Her çeyrek objesi: { verimlilik, ikinciInsp, teknikSkor, tarih }
+let ceyrekArsivi = {};
 let nextId = 1;
 let secilenId = null;
 let sayfa = 1;
@@ -722,6 +727,7 @@ try {
 const ASSIGNABLE_TABS = [
   { id: 'dashboard',        label: 'Dashboard' },
   { id: 'performans',       label: 'Performans Analizi' },
+  { id: 'ceyrek-performans',label: 'Çeyrek Performans' },
   { id: 'canli',            label: 'Canlı Gösterim' },
   { id: 'teknik-inceleme',  label: 'Teknik İnceleme' }
 ];
@@ -2907,6 +2913,8 @@ function showPage(id, navEl){
 
   if(id === 'dashboard') {
     renderDashboard();
+  } else if(id === 'ceyrek-performans') {
+    renderCeyrekPerformansTablosu();
   } else if(id === 'canli') {
     initCanliPage();
   } else if(id === 'performans') {
@@ -3156,6 +3164,144 @@ function renderQuarterBadge(inspectors) {
     clearTimeout(window._quarterPushTimer);
     window._quarterPushTimer = setTimeout(function() { pushConfigToSheets(); }, 3000);
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ÇEYREK (QUARTER) PERFORMANS ARŞİVİ
+// Dashboard/Teknik İnceleme verisinden BAĞIMSIZ, kalıcı bir arşiv tablosu.
+// "📤 Çeyrek Verisi Gönder" butonuna basılınca, o anki ayın ait olduğu
+// çeyreğin hücresi güncel veriyle YAZILIR — diğer çeyreklere DOKUNULMAZ.
+// Böylece dönem değişince Dashboard/Teknik İnceleme verisi silinse bile,
+// önceki çeyreklerin arşivi kaybolmaz.
+// ══════════════════════════════════════════════════════════════════════
+
+function _ceyrekInspectorKey(ad) {
+  return String(ad || '').toLowerCase().trim();
+}
+
+// Sunucudan mevcut arşivi çeker (sayfa açılışında bir kez çağrılır)
+async function loadCeyrekArsivi() {
+  try {
+    const url = appConfig.sheetsWebAppUrl;
+    const token = appConfig.sheetsApiToken;
+    if (!url || !token) return;
+    const data = await jsonpFetch(url, { action: 'getCeyrekPerformans', token });
+    if (data && data.status === 'ok' && data.veri && typeof data.veri === 'object') {
+      ceyrekArsivi = data.veri;
+    }
+  } catch (e) {
+    console.warn('Çeyrek arşivi çekme hatası:', e.message);
+  }
+}
+
+// Arşivi sunucuya kaydeder (fire-and-forget, setKlasmanlar ile aynı desen)
+async function _pushCeyrekArsiviToServer() {
+  const url = appConfig.sheetsWebAppUrl;
+  const token = appConfig.sheetsApiToken;
+  if (!url || !token) return;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ action: 'setCeyrekPerformans', token, veri: ceyrekArsivi }),
+      mode: 'no-cors'
+    });
+  } catch (e) {
+    console.warn('Çeyrek arşivi kaydetme hatası:', e.message);
+  }
+}
+
+// "📤 Çeyrek Verisi Gönder" butonunun handler'ı — Dashboard'daki güncel
+// performans verisini, o anki ayın ait olduğu çeyreğin hücresine YAZAR.
+// Diğer çeyreklerdeki (önceki dönemlere ait) veriye HİÇ dokunmaz.
+async function ceyrekVerisiGonder(event) {
+  if (!performansData || !performansData.length) {
+    alert('⚠️ Önce Excel yükleyip performans hesaplaması yapmanız gerekiyor.');
+    return;
+  }
+  const btn = event?.target;
+  const origText = btn?.textContent || '';
+  if (btn) { btn.textContent = '⏳ Gönderiliyor...'; btn.disabled = true; }
+
+  const suankiCeyrek = _ayToQuarter(new Date().getMonth() + 1);
+  const simdi = new Date().toISOString();
+
+  performansData.forEach(insp => {
+    const key = _ceyrekInspectorKey(insp.ins);
+    if (!ceyrekArsivi[key]) {
+      ceyrekArsivi[key] = { displayName: insp.ins, Q1: null, Q2: null, Q3: null, Q4: null };
+    }
+    // İsim güncel tutulsun (görünen ad değişmiş olabilir)
+    ceyrekArsivi[key].displayName = insp.ins;
+
+    const verimlilik = getDispPerf(insp);
+    const ikinciInsp = getIkinciInspectionOraniForInspector(insp.ins).percent;
+    const tekniknesne = getTeknikIncelemeSkorForInspector(insp.ins);
+    const teknikSkor = tekniknesne.count > 0 ? tekniknesne.percent : null;
+
+    // SADECE o anki çeyreğin hücresi yazılır — diğer çeyrekler dokunulmaz
+    ceyrekArsivi[key][suankiCeyrek] = {
+      verimlilik: verimlilik !== null && verimlilik !== undefined ? verimlilik : null,
+      ikinciInsp: ikinciInsp,
+      teknikSkor: teknikSkor,
+      tarih: simdi
+    };
+  });
+
+  try { localStorage.setItem('ceyrek_arsivi', JSON.stringify(ceyrekArsivi)); } catch(e) {}
+  await _pushCeyrekArsiviToServer();
+
+  if (btn) { btn.textContent = '✅ Gönderildi'; }
+  setTimeout(() => { if (btn) { btn.textContent = origText || '📤 Çeyrek Verisi Gönder'; btn.disabled = false; } }, 2000);
+
+  showFileStatus(`✅ ${suankiCeyrek} dönemi için ${performansData.length} inspector verisi çeyrek arşivine kaydedildi.`, 'var(--green)');
+
+  // Çeyrek Performans sayfası açıksa anında güncelle
+  if (document.getElementById('page-ceyrek-performans')?.classList.contains('active')) {
+    renderCeyrekPerformansTablosu();
+  }
+}
+
+function _ceyrekMetrikHucre(veri) {
+  if (!veri) return '<span style="color:var(--muted2);font-size:11px">— veri yok —</span>';
+  const renk = (v, tersMi) => v === null || v === undefined ? 'var(--muted2)'
+    : (v >= 85 ? '#00897B' : v >= 70 ? '#F57F17' : v >= 50 ? '#EF5350' : '#B71C1C');
+  return `
+    <div style="font-size:10px;line-height:1.9">
+      <div><span style="color:var(--muted)">Verimlilik:</span> <strong style="color:${renk(veri.verimlilik)}">${veri.verimlilik !== null && veri.verimlilik !== undefined ? veri.verimlilik + '%' : '—'}</strong></div>
+      <div><span style="color:var(--muted)">İkinci Insp.:</span> <strong style="color:${renk(veri.ikinciInsp)}">${veri.ikinciInsp !== null && veri.ikinciInsp !== undefined ? veri.ikinciInsp + '%' : '—'}</strong></div>
+      <div><span style="color:var(--muted)">Teknik Skor:</span> <strong style="color:${renk(veri.teknikSkor)}">${veri.teknikSkor !== null && veri.teknikSkor !== undefined ? veri.teknikSkor + '%' : '—'}</strong></div>
+    </div>`;
+}
+
+function renderCeyrekPerformansTablosu() {
+  const tbody = document.getElementById('ceyrek-tablo-body');
+  if (!tbody) return;
+
+  const kayitlar = Object.values(ceyrekArsivi).sort((a, b) =>
+    (a.displayName || '').localeCompare(b.displayName || '', 'tr'));
+
+  const filtreMetni = (document.getElementById('ceyrek-arama')?.value || '').toLowerCase().trim();
+  const filtreli = filtreMetni
+    ? kayitlar.filter(k => (k.displayName || '').toLowerCase().includes(filtreMetni))
+    : kayitlar;
+
+  document.getElementById('ceyrek-toplam-sayac').textContent = filtreli.length + ' inspector';
+
+  if (!filtreli.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="padding:30px;text-align:center;color:var(--muted2)">
+      Henüz çeyrek verisi gönderilmemiş. Dashboard sayfasından "📤 Çeyrek Verisi Gönder" butonuna basın.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtreli.map((k, i) => `
+    <tr style="background:${i % 2 === 0 ? '#fff' : '#F9FBFF'};border-bottom:1px solid var(--border2)">
+      <td style="padding:10px 12px;font-weight:600;color:var(--navy);white-space:nowrap">${_escapeHtml(_formatDisplayName(k.displayName))}</td>
+      <td style="padding:10px 12px;border-left:3px solid #90CAF9">${_ceyrekMetrikHucre(k.Q1)}</td>
+      <td style="padding:10px 12px;border-left:3px solid #A5D6A7">${_ceyrekMetrikHucre(k.Q2)}</td>
+      <td style="padding:10px 12px;border-left:3px solid #FFCC80">${_ceyrekMetrikHucre(k.Q3)}</td>
+      <td style="padding:10px 12px;border-left:3px solid #EF9A9A">${_ceyrekMetrikHucre(k.Q4)}</td>
+    </tr>`).join('');
 }
 
 
@@ -6831,12 +6977,23 @@ _teamManagersOpen = false; // Sayfa yuklenirken kesin olarak kapali baslat (guve
 loadData();
 loadKayipZamanFromLocalStorage();
 if (typeof updateKayipNavBadge === 'function') updateKayipNavBadge();
+// Çeyrek arşivini önce localStorage'dan (anında), sonra sunucudan (güncel) yükle
+try {
+  const _ceyrekLocal = localStorage.getItem('ceyrek_arsivi');
+  if (_ceyrekLocal) ceyrekArsivi = JSON.parse(_ceyrekLocal);
+} catch(e) {}
 loadConfig();
 renderListe();
 renderEditor();
 renderDashboard();
 renderPerfTabloFromData();
 updateSidebar();
+loadCeyrekArsivi().then(() => {
+  try { localStorage.setItem('ceyrek_arsivi', JSON.stringify(ceyrekArsivi)); } catch(e) {}
+  if (document.getElementById('page-ceyrek-performans')?.classList.contains('active')) {
+    renderCeyrekPerformansTablosu();
+  }
+});
 
 // Şifre kapısını başlat
 initPasswordGate();
