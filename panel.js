@@ -6166,7 +6166,22 @@ function performansHesapla(){
       hedefAdetGunluk: hedefAdetGunluk,
       beklenenAdet: Math.round(beklenenAdet),
       tarihBasariliKayit: inspectorData.kayitListesi.length,
-      gunSayisi: mesaiHesap ? mesaiHesap.gunSayisi : 0,
+      // ÖNEMLİ DÜZELTME: Çalışma Gün Sayısı artık ayrı bir paralel yapıdan
+      // (mesaiHesap.gunSayisi) DEĞİL, doğrudan "Kayıt Detayı" export'una da
+      // giden AYNI kaynaktan (inspectorData.klasmanlar → her klasmanın
+      // kayıtları) hesaplanıyor. Böylece rapor/export'ta görülen kayıtlarla
+      // "Çalışma Gün Sayısı" HER ZAMAN birebir tutarlı olur — daha önce bu
+      // ikisi bazen 1-2 gün farklı çıkabiliyordu (örn. Ali Kırna'da 67 vs
+      // gerçek 65 gibi).
+      gunSayisi: (() => {
+        const gunSet = new Set();
+        Object.values(inspectorData.klasmanlar).forEach(kl => {
+          (kl.kayitlar || []).forEach(r => {
+            if (r.tarihGecerli && r.baslangic) gunSet.add(r.baslangic.toDateString());
+          });
+        });
+        return gunSet.size;
+      })(),
       gunlukDetay: mesaiHesap ? mesaiHesap.gunlukDetay : [],
       toplamMesaistiSaniye: mesaiHesap ? (mesaiHesap.toplamMesaistiSaniye || 0) : 0,
       gunlukOvertimeDetay: mesaiHesap ? (mesaiHesap.gunlukOvertimeDetay || {}) : {},
