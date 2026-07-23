@@ -10269,6 +10269,57 @@ function getIkinciInspectionOraniForInspector(inspectorName) {
   return { percent, count: kayitlar.length, geciSayisi };
 }
 
+// ── "⚠️ Az/Hiç Değerlendirilenler" Popup ─────────────────────────────────
+// Teknik İnceleme + İkinci Inspection kayıt sayısı en az olan (0 dahil)
+// inspectörleri, en öncelikliden (en az kayıt) en aza doğru sıralı gösterir
+// — böylece ekip yöneticileri/admin, ihmal edilmiş inspectörleri kolayca
+// görüp değerlendirme sırasını buna göre önceliklendirebilir.
+function showAzDegerlendirilenlerPopup() {
+  const popup = document.getElementById('az-degerlendirilen-popup');
+  if (!popup) return;
+  const aramaEl = document.getElementById('az-degerlendirilen-arama');
+  if (aramaEl) aramaEl.value = '';
+  popup.style.display = 'flex';
+  renderAzDegerlendirilenlerTablosu();
+}
+
+function renderAzDegerlendirilenlerTablosu() {
+  const tbody = document.getElementById('az-degerlendirilen-tablo-body');
+  if (!tbody) return;
+
+  const filtreMetni = (document.getElementById('az-degerlendirilen-arama')?.value || '').toLowerCase().trim();
+
+  const liste = (performansData || []).map(insp => {
+    const ti = getTeknikIncelemeSkorForInspector(insp.ins);
+    const ii = getIkinciInspectionOraniForInspector(insp.ins);
+    return {
+      ins: insp.ins,
+      tiCount: ti.count || 0,
+      iiCount: ii.count || 0,
+      toplam: (ti.count || 0) + (ii.count || 0)
+    };
+  })
+  .filter(r => !filtreMetni || r.ins.toLowerCase().includes(filtreMetni))
+  // En az değerlendirilen (0 dahil) en üstte — öncelik sırası budur
+  .sort((a, b) => a.toplam - b.toplam || a.ins.localeCompare(b.ins, 'tr'));
+
+  if (!liste.length) {
+    tbody.innerHTML = `<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--muted2)">Kayıt bulunamadı — önce Excel yükleyip performans hesaplaması yapın.</td></tr>`;
+    return;
+  }
+
+  // Renk eşikleri: 0 = en kritik (koyu kırmızı), 1-2 = kırmızı, 3-5 = turuncu, 6+ = yeşil
+  const renk = (n) => n === 0 ? '#B71C1C' : n <= 2 ? '#EF5350' : n <= 5 ? '#F57F17' : '#00897B';
+
+  tbody.innerHTML = liste.map((r, i) => `
+    <tr style="background:${i % 2 === 0 ? '#fff' : '#F9FBFF'};border-bottom:1px solid var(--border2)">
+      <td style="padding:9px 12px;font-weight:600;color:var(--navy)">${_escapeHtml(_formatDisplayName(r.ins))}</td>
+      <td style="padding:9px 12px;text-align:center;font-weight:700;color:${renk(r.tiCount)}">${r.tiCount}${r.tiCount === 0 ? ' <span style="font-size:9px">— hiç yok</span>' : ''}</td>
+      <td style="padding:9px 12px;text-align:center;font-weight:700;color:${renk(r.iiCount)}">${r.iiCount}${r.iiCount === 0 ? ' <span style="font-size:9px">— hiç yok</span>' : ''}</td>
+      <td style="padding:9px 12px;text-align:center;font-weight:700;color:${renk(r.toplam)}">${r.toplam}</td>
+    </tr>`).join('');
+}
+
 // ─── Sayfa Girişi ───
 // İkinci Inspection formundaki Inspector ve Ekip Yöneticisi alanlarını
 // sistemdeki mevcut isimlerden doldurur (kullanıcı talebiyle: elle yazmak
