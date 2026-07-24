@@ -109,10 +109,10 @@ const translations = {
     // Summary stats
     stat_total_inspector: 'Toplam Inspector',
     stat_excellent:       'Mükemmel (≥95%)',
-    stat_good:            'İyi (≥85%)',
-    stat_average:         'Orta (70-84%)',
-    stat_poor:            'Gelişime Açık (50-69%)',
-    stat_verypoor:        'Zayıf (<50%)',
+    stat_good:            'İyi (≥98%)',
+    stat_average:         'Orta (88-97%)',
+    stat_poor:            'Gelişime Açık (73-87%)',
+    stat_verypoor:        'Zayıf (<73%)',
     stat_avg_perf:        '📅 Ortalama Performans',
     stat_avg_days:        '⏰ Ortalama Çalışma Günü',
     stat_total_product:   '📦 Toplam Ürün',
@@ -359,7 +359,7 @@ const translations = {
     open_link:             '🔗 Aç',
     open_link_hint:        'Tabloyu tarayıcıda açmak için kullanılır',
     opt_excellent:         'Mükemmel (≥95%)',
-    opt_good:              'İyi (≥85%)',
+    opt_good:              'İyi (≥98%)',
     overtime_duration:     'Overtime Süresi',
     perf_how_sub:          'Hesaplama mantığı, formüller ve Google Sheets entegrasyonu',
     perf_how_title:        '📊 Performans Analizi — Nasıl Çalışır?',
@@ -3413,10 +3413,10 @@ function changeCeyrekSayfa(delta) {
 // oranı ile birlikte tablo halinde gösterir.
 // ─────────────────────────────────────────────
 const PERF_SEVIYE_TANIM = {
-  good:      { label: 'İyi (≥85%)',              icon: '👍', min: 85,  max: Infinity, color: 'var(--blue)'  },
-  average:   { label: 'Orta (70-84%)',           icon: '⚠️', min: 70,  max: 85,       color: 'var(--amber)' },
-  weak:      { label: 'Gelişime Açık (50-69%)',  icon: '🔻', min: 50,  max: 70,       color: '#EF5350'      },
-  verypoor:  { label: 'Zayıf (<50%)',             icon: '📉', min: -Infinity, max: 50, color: '#B71C1C'      }
+  good:      { label: 'İyi (≥98%)',              icon: '👍', min: 98,  max: Infinity, color: 'var(--blue)'  },
+  average:   { label: 'Orta (88-97%)',           icon: '⚠️', min: 88,  max: 98,       color: 'var(--amber)' },
+  weak:      { label: 'Gelişime Açık (73-87%)',  icon: '🔻', min: 73,  max: 88,       color: '#EF5350'      },
+  verypoor:  { label: 'Zayıf (<73%)',             icon: '📉', min: -Infinity, max: 73, color: '#B71C1C'      }
 };
 
 
