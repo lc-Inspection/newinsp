@@ -602,7 +602,7 @@ const KZ_CACHE_MS = 20000; // 20 saniye icinde tekrar girilirse network'e gitmed
 // kontrol eden toggle. VARSAYILAN: false (kapalı) — mevcut/eski davranış birebir
 // korunur: 2.Kalite kayıtları genel performansa hiç karışmaz, ayrı gösterilir.
 // true olursa: 2.Kalite kayıtları diğer kayıtlarla aynı akıştan geçer (ayrım kalkar).
-let _2KaliteDahil = false;
+let _2KaliteDahil = true;
 
 // Overtime çalışmasının Düz. Performans hesabına dahil edilip edilmeyeceği.
 // VARSAYILAN: false — performans sadece normal mesai (08:00-16:45) paydasıyla hesaplanır.
@@ -1979,7 +1979,7 @@ async function pushPerformansManual(ev) {
       let mesaiSnPush = inspector.mesaiSure || 0;
       const notrKayipSnPush = getNotrKayipDakikaForInspector(inspector.ins) * 60;
       if (notrKayipSnPush > 0 && mesaiSnPush > notrKayipSnPush) mesaiSnPush -= notrKayipSnPush;
-      const _hedefAdetPush = inspector.hedefAdetGunluk || 450;
+      const _hedefAdetPush = inspector.hedefAdetGunluk || 410;
       const _beklenenAdetPush = _hedefAdetPush * (mesaiSnPush / GUNLUK_CALISMA_SANIYE);
       const hamPerfPush = (_adetPush > 0 && _beklenenAdetPush > 0)
         ? Math.round((_adetPush / _beklenenAdetPush) * 100) : inspector.genelHizPerf;
@@ -2987,7 +2987,7 @@ function getDispPerf(inspector) {
   }
 
   // ADET BAZLI: hedef adet, kayıp zaman düşülmüş mesai süresine orantılanır
-  const hedefAdetGunluk = inspector.hedefAdetGunluk || 450;
+  const hedefAdetGunluk = inspector.hedefAdetGunluk || 410;
   const beklenenAdet = hedefAdetGunluk * (mesaiSn / GUNLUK_CALISMA_SANIYE);
   const hedef = inspector.hedefVerimlilik || 100;
   return beklenenAdet > 0 ? Math.round((adet / beklenenAdet) * 100 * (100 / hedef)) : statikDeger;
@@ -3010,22 +3010,41 @@ function getPerformanceLevelLabel(performans) {
   return t.perf_verypoor;
 }
 
-// ── "İyi" SEVİYESİ İÇİN EK ŞART: Mesaisiz Günlük Ort. ≥ 400 ─────────────
-// Bir inspector'ın performansı %85'in üzerinde olsa bile, normal saatte
-// (overtime hariç) günlük ortalama kontrol adedi 400'ün altındaysa "İyi"
-// sayılmaz — bir alt seviyeye (Orta) düşürülür. Bu, hızlı görünen ama
-// gerçekte az iş yapan (örn. çok az gün çalışıp yüksek % çıkan) durumları
-// filtrelemek için eklendi. Dashboard kartı VE performans seviyesi popup'ı
-// (showPerfSeviyeDetay) bu fonksiyonu kullanarak TUTARLI kalır.
+// ── PERFORMANS SEVİYESİ ARTIK MESAİSİZ GÜNLÜK ORT. (ADET) BAZLI ────────
+// Önceki sürümde seviye (İyi/Orta/Gelişime Açık/Zayıf) Verimlilik Perf (%)
+// eşiklerine göre belirleniyordu (sadece "İyi" için ek bir adet şartı
+// vardı). Artık TAMAMEN adet bazlı: kişinin normal saatte (overtime hariç)
+// günlük ortalama kontrol adedi hangi aralığa düşüyorsa seviyesi o oluyor.
+// Verimlilik Perf (%) hesaplaması DEĞİŞMEDİ, hâlâ aynı formülle hesaplanıp
+// kartta gösteriliyor — sadece hangi renkli kutuya/kategoriye gireceğine
+// artık % değil, ham üretim adedi karar veriyor.
+//   İyi              : Mesaisiz Günlük Ort. ≥ 400
+//   Orta (70-84%)     : 360 – 399
+//   Gelişime Açık     : 300 – 359
+//   Zayıf (<50%)      : < 300
+// Dashboard kartı, üstteki özet sayaçları VE performans seviyesi popup'ı
+// (showPerfSeviyeDetay) hepsi bu TEK fonksiyonu kullanarak tutarlı kalır.
 function getEfektifPerfSeviye(inspector, performansVal) {
   const gunSayisi   = inspector.gunSayisi || 0;
   const normalAdet  = (inspector.adet || 0) - (inspector.toplamOvertimeAdet || 0);
   const gunlukOrtNormal = gunSayisi > 0 ? Math.round(normalAdet / gunSayisi) : 0;
-  const demoted = (performansVal >= 85 && gunlukOrtNormal < 400);
+  const t = translations[currentLang] || translations.tr;
+
+  let cls, label;
+  if (gunlukOrtNormal >= 400) {
+    cls = 'perf-good';      label = t.perf_good;
+  } else if (gunlukOrtNormal >= 360) {
+    cls = 'perf-average';   label = t.perf_average;
+  } else if (gunlukOrtNormal >= 300) {
+    cls = 'perf-weak';      label = t.perf_weak;
+  } else {
+    cls = 'perf-verypoor';  label = t.perf_verypoor;
+  }
+
   return {
-    cls: demoted ? 'perf-average' : getPerformanceClass(performansVal),
-    label: demoted ? (translations[currentLang]||translations.tr).perf_average : getPerformanceLevelLabel(performansVal),
-    demoted,
+    cls,
+    label,
+    demoted: false, // artık "yüzde düşürme" kavramı yok, kategori doğrudan adetten geliyor
     gunlukOrtNormal
   };
 }
@@ -3067,10 +3086,9 @@ function updateSummaryStats(inspectors) {
   // zaten getDispPerf kullanıyordu) FARKLI sayılar göstermesine yol açıyordu.
   const getPerfVal = (i) => getDispPerf(i);
 
-  // 5'ten 4'e indirildi (kullanıcı talebiyle): Mükemmel+İyi tek "İyi" dilimi
-  // oldu (≥85%). "Zayıf" → "Gelişime Açık" (50-69%), "Çok Zayıf" → "Zayıf" (<50%).
-  // EFEKTİF SEVİYE: "İyi" (≥85%) eşiğini geçse bile Mesaisiz Günlük Ort. <400
-  // olan biri buraya değil "Orta"ya sayılır — kartlar/popup ile tutarlı olsun.
+  // Performans seviyeleri artık TAMAMEN Mesaisiz Günlük Ort. (adet) bazlı —
+  // bkz. getEfektifPerfSeviye(). Verimlilik Perf (%) hesabı değişmedi, sadece
+  // hangi kutuya girileceğine artık % değil ham üretim adedi karar veriyor.
   const good = inspectors.filter(i => {
     const p = getPerfVal(i);
     return getEfektifPerfSeviye(i, p).cls === 'perf-good';
@@ -3081,9 +3099,12 @@ function updateSummaryStats(inspectors) {
   }).length;
   const poor = inspectors.filter(i => {
     const p = getPerfVal(i);
-    return p >= 50 && p < 70;
+    return getEfektifPerfSeviye(i, p).cls === 'perf-weak';
   }).length;
-  const veryPoor = inspectors.filter(i => getPerfVal(i) < 50).length;
+  const veryPoor = inspectors.filter(i => {
+    const p = getPerfVal(i);
+    return getEfektifPerfSeviye(i, p).cls === 'perf-verypoor';
+  }).length;
 
   const validPerformances = inspectors.filter(i => 
     i.verimlilikPerf !== null && i.verimlilikPerf !== undefined || i.genelHizPerf !== null && i.genelHizPerf !== undefined
@@ -3426,7 +3447,7 @@ function showPerfSeviyeDetay(seviyeKey) {
   const rows = liste.map(insp => {
     const perf = getDispPerf(insp);
     const _efektif = getEfektifPerfSeviye(insp, perf);
-    const perfColor = _efektif.demoted ? '#F57F17' : getProgressColor(perf);
+    const perfColor = getProgressColor(perf);
     const otDk = Math.round((insp.toplamMesaistiSaniye || 0) / 60);
     const otHtml = otDk > 0
       ? `<span style="color:#E65100;font-weight:600">🌙 ${otDk}dk</span>`
@@ -3438,7 +3459,7 @@ function showPerfSeviyeDetay(seviyeKey) {
     const ortMesaili   = _gunSayisiP > 0 ? Math.round((insp.adet || 0) / _gunSayisiP) : 0;
     return `
       <tr style="border-bottom:1px solid var(--border2)">
-        <td style="padding:9px 10px;font-weight:600;color:var(--navy);cursor:pointer" onclick="document.getElementById('perf-seviye-popup').style.display='none'; showInspectorDetail('${insp.ins.replace(/'/g, "\\'")}')">${_escapeHtml(_formatDisplayName(insp.ins))}${_efektif.demoted ? `<div style="font-size:8px;color:#F57F17;font-weight:600;margin-top:2px">⚠️ İyi'den düşürüldü (Ort.&lt;400)</div>` : ''}</td>
+        <td style="padding:9px 10px;font-weight:600;color:var(--navy);cursor:pointer" onclick="document.getElementById('perf-seviye-popup').style.display='none'; showInspectorDetail('${insp.ins.replace(/'/g, "\\'")}')">${_escapeHtml(_formatDisplayName(insp.ins))}</td>
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${insp.gunSayisi || 0} gün${azVeriMi(insp.gunSayisi) ? '<br>' + azVeriRozetiHtml('badge') : ''}</td>
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${formatTR(ortMesaisiz)}</td>
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${formatTR(ortMesaili)}</td>
@@ -3525,7 +3546,7 @@ function onOvertimeDahilChange() {
       const payda = _overtimeDahil
         ? row.mesaiSure
         : (normalMesai > 0 ? normalMesai : row.mesaiSure);
-      const hedefAdetGunluk = row.hedefAdetGunluk || 450;
+      const hedefAdetGunluk = row.hedefAdetGunluk || 410;
       const beklenenAdet = payda > 0 ? hedefAdetGunluk * (payda / GUNLUK_CALISMA_SANIYE) : 0;
       row.genelHizPerf = (payda > 0 && beklenenAdet > 0) ? Math.round((adetPay / beklenenAdet) * 100) : row.genelHizPerf;
       row.genelPerformans = row.genelHizPerf;
@@ -3634,7 +3655,7 @@ function filterInspectors() {
     let mesaiSnF = inspector.mesaiSure || 0;
     const notrKayipSnF = getNotrKayipDakikaForInspector(inspector.ins) * 60;
     if (notrKayipSnF > 0 && mesaiSnF > notrKayipSnF) mesaiSnF -= notrKayipSnF;
-    const _hedefAdetF = inspector.hedefAdetGunluk || 450;
+    const _hedefAdetF = inspector.hedefAdetGunluk || 410;
     const _beklenenAdetF = _hedefAdetF * (mesaiSnF / GUNLUK_CALISMA_SANIYE);
     const hamPerfF = (_adetF > 0 && _beklenenAdetF > 0)
       ? Math.round((_adetF / _beklenenAdetF) * 100)
@@ -3754,7 +3775,7 @@ function renderInspectorCards() {
     let mesaiSnKart = inspector.mesaiSure || 0;
     const notrKayipSnKart = getNotrKayipDakikaForInspector(inspector.ins) * 60;
     if (notrKayipSnKart > 0 && mesaiSnKart > notrKayipSnKart) mesaiSnKart -= notrKayipSnKart;
-    const _hedefAdetKart = inspector.hedefAdetGunluk || 450;
+    const _hedefAdetKart = inspector.hedefAdetGunluk || 410;
     const _beklenenAdetKart = _hedefAdetKart * (mesaiSnKart / GUNLUK_CALISMA_SANIYE);
     // ÖNEMLİ DÜZELTME: eskiden burada ÖNCE (adet/beklenenAdet*100) yuvarlanıp
     // SONRA o yuvarlanmış sayı tekrar (*100/hedef) ile İKİNCİ KEZ
@@ -3769,7 +3790,7 @@ function renderInspectorCards() {
     const performansClass = _efektifSeviye.cls;
     const performansText = duzPerf !== null ? duzPerf + '%' : '—';
     const progressAngle = Math.min(360, (performansVal / 100) * 360);
-    const progressColor = _efektifSeviye.demoted ? '#F57F17' : getProgressColor(performansVal);
+    const progressColor = getProgressColor(performansVal);
     
     const ini = inspector.ins.split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
     const klasmanCount = Object.keys(inspector.klasmanlar).length;
@@ -3844,7 +3865,6 @@ function renderInspectorCards() {
             </div>
             <div style="font-size:10px;color:var(--muted);margin-top:5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase" data-i18n="adj_perf_label">Düz. Performans</div>
             <div style="font-size:9px;color:${progressColor};font-weight:600;margin-top:1px">${performansSeviyesi}</div>
-            ${_efektifSeviye.demoted ? `<div style="font-size:8px;color:#F57F17;margin-top:2px;max-width:120px;line-height:1.3">⚠️ İyi eşiğini geçti ama Mesaisiz Günlük Ort. (${formatTR(_efektifSeviye.gunlukOrtNormal)}) &lt;400 olduğu için Orta'ya düşürüldü</div>` : ''}
           </div>
         </div>
 
@@ -4161,7 +4181,7 @@ function exportToExcel() {
     let _mesSnEx = inspector.mesaiSure || 0;
     const _kzSnEx = getNotrKayipDakikaForInspector(inspector.ins) * 60;
     if (_kzSnEx > 0 && _mesSnEx > _kzSnEx) _mesSnEx -= _kzSnEx;
-    const _hedefAdetEx = inspector.hedefAdetGunluk || 450;
+    const _hedefAdetEx = inspector.hedefAdetGunluk || 410;
     const _beklenenAdetEx = _hedefAdetEx * (_mesSnEx / GUNLUK_CALISMA_SANIYE);
     const _hamPEx = (_adetEx > 0 && _beklenenAdetEx > 0)
       ? Math.round((_adetEx / _beklenenAdetEx) * 100) : inspector.genelHizPerf;
@@ -4387,7 +4407,7 @@ function exportInspectorDetail() {
   let _mesaiSnOzet = inspector.mesaiSure || 0;
   const _notrKayipSnOzet = getNotrKayipDakikaForInspector(inspector.ins) * 60;
   if (_notrKayipSnOzet > 0 && _mesaiSnOzet > _notrKayipSnOzet) _mesaiSnOzet -= _notrKayipSnOzet;
-  const _hedefAdetOzet = inspector.hedefAdetGunluk || 450;
+  const _hedefAdetOzet = inspector.hedefAdetGunluk || 410;
   const _beklenenAdetOzet = _hedefAdetOzet * (_mesaiSnOzet / GUNLUK_CALISMA_SANIYE);
   const hamPerf  = inspector.genelHizPerf ?? 0;
   const duzPerf  = (_adetOzet > 0 && _beklenenAdetOzet > 0)
@@ -5072,7 +5092,7 @@ function renderPerfTabloFromData(page) {
     let mesaiSn = r.mesaiSure || 0;
     const notrKayipSn = getNotrKayipDakikaForInspector(r.ins) * 60;
     if (notrKayipSn > 0 && mesaiSn > notrKayipSn) mesaiSn -= notrKayipSn;
-    const hedefAdetGunluk = r.hedefAdetGunluk || 450;
+    const hedefAdetGunluk = r.hedefAdetGunluk || 410;
     const beklenenAdet = hedefAdetGunluk * (mesaiSn / GUNLUK_CALISMA_SANIYE);
     return (adet > 0 && beklenenAdet > 0) ? (adet / beklenenAdet) * 100 : (r.genelHizPerf ?? null);
   };
@@ -5637,7 +5657,7 @@ function performansHesapla(){
   // dönemde çalıştığı gerçek mesai süresine ORANTILI olarak küçültülüp
   // büyütülür (tıpkı standart sürenin mesaiye oranlanması gibi — kısmi gün
   // çalışan birinin hedefi de otomatik olarak orantılı düşer).
-  const hedefAdetGunluk = Math.max(1, parseFloat(document.getElementById('inp-hedef-adet')?.value) || 450);
+  const hedefAdetGunluk = Math.max(1, parseFloat(document.getElementById('inp-hedef-adet')?.value) || 410);
 
   updateOrneklemeUI();
 
@@ -6143,7 +6163,7 @@ function performansHesapla(){
     // Genel "Düz. Performans" hesabına dahil EDİLMEZ. GÜN BAZLI: 2.Kalite
     // kontrolü yapılan GÜN SAYISI (süre değil — süre bazlı hesap, kısa/
     // çakışan zaman damgalarında oranı yapay şekilde şişiriyordu), günlük
-    // hedef adede (450) çarpılıp beklenen adet bulunur.
+    // hedef adede (410) çarpılıp beklenen adet bulunur.
     const gun2KaliteSayisi = inspectorData.gun2KaliteSet ? inspectorData.gun2KaliteSet.size : 0;
     const beklenenAdet2Kalite = gun2KaliteSayisi > 0
       ? hedefAdetGunluk * gun2KaliteSayisi
@@ -7974,7 +7994,7 @@ function getInspectorsForTeam(teamArr) {
       let _mesSnT = inspector.mesaiSure || 0;
       const _kzSnT = getNotrKayipDakikaForInspector(inspector.ins) * 60;
       if (_kzSnT > 0 && _mesSnT > _kzSnT) _mesSnT -= _kzSnT;
-      const _hedefAdetT = inspector.hedefAdetGunluk || 450;
+      const _hedefAdetT = inspector.hedefAdetGunluk || 410;
       const _beklenenAdetT = _hedefAdetT * (_mesSnT / GUNLUK_CALISMA_SANIYE);
       const _hamPT = (_adetT > 0 && _beklenenAdetT > 0)
         ? Math.round((_adetT / _beklenenAdetT) * 100) : inspector.genelHizPerf;
@@ -8882,7 +8902,7 @@ function getDuzeltilmisPerformans(inspector) {
     mesaiSn -= kayipDkSn;
   }
 
-  const hedefAdetGunluk = inspector.hedefAdetGunluk || 450;
+  const hedefAdetGunluk = inspector.hedefAdetGunluk || 410;
   const beklenenAdet = hedefAdetGunluk * (mesaiSn / GUNLUK_CALISMA_SANIYE);
   const hedef = inspector.hedefVerimlilik || 100;
   return beklenenAdet > 0 ? Math.round((adet / beklenenAdet) * 100 * (100 / hedef)) : getDispPerf(inspector);
@@ -8902,7 +8922,7 @@ function getOrijinalHamPerf(inspector) {
   const mesaiSn = inspector.mesaiSure || 0;
   const adet    = inspector.adet      || 0;
   if (!mesaiSn || !adet) return getDispPerf(inspector);
-  const hedefAdetGunluk = inspector.hedefAdetGunluk || 450;
+  const hedefAdetGunluk = inspector.hedefAdetGunluk || 410;
   const beklenenAdet = hedefAdetGunluk * (mesaiSn / GUNLUK_CALISMA_SANIYE);
   const hedef = inspector.hedefVerimlilik || 100;
   return beklenenAdet > 0 ? Math.round((adet / beklenenAdet) * 100 * (100 / hedef)) : getDispPerf(inspector);
