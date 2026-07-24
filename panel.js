@@ -5637,6 +5637,23 @@ function performansHesapla(){
     console.warn('[Inspection Tipi] Sütun BULUNAMADI. Excel sütunları:', excelCols);
   }
 
+  // "Ticari Karar" sütununu otomatik bul (panelde ayrı seçim alanı yok) —
+  // Ticari Karar'ı "Ticari Sevk" olan satırlar örnekleme/seviyelendirmeye
+  // TABİ TUTULMAZ: BakılacakMiktar'daki adet AYNEN kullanılır. Mantık,
+  // aşağıdaki "InspectionSonuc = Kaldı" kuralıyla birebir aynı mekanizmayı
+  // kullanır (satırOrneklemeMod = 'kapali' zorlanır → orneklemeAdet() tam
+  // adedi döndürür), bu yüzden diğer hesaplamalara dokunmaz.
+  const ticariKararCol = excelCols.find(c => {
+    const norm = c.replace(/İ/g,'i').toLowerCase().replace(/[^a-z0-9]/g,'').replace(/ş/g,'s').replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ö/g,'o').replace(/ı/g,'i').replace(/ç/g,'c');
+    return norm.includes('ticarikarar');
+  }) || '';
+  if (ticariKararCol) {
+    const _ornekTicariDegerler = [...new Set(excelRows.slice(0, 200).map(r => String(r[ticariKararCol]||'').trim()).filter(Boolean))].slice(0, 8);
+    console.log(`[Ticari Karar] Sütun bulundu: "${ticariKararCol}" — örnek değerler:`, _ornekTicariDegerler);
+  } else {
+    console.warn('[Ticari Karar] Sütun BULUNAMADI. Excel sütunları:', excelCols);
+  }
+
   const orneklemeMod = document.querySelector('input[name="ornekleme-mod"]:checked')?.value || 'kapali';
   const verimlilikHedef = Math.max(1, parseFloat(document.getElementById('inp-verimlilik')?.value) || 100);
   // ── ADET BAZLI SİSTEM: Standart Süre yerine Adet Hedefi ────────────────
@@ -5720,6 +5737,7 @@ function performansHesapla(){
   let tarihHataliKayitlar = 0;
 
   let kaldiSatirSayisi = 0;
+  let ticariSevkSatirSayisi = 0;
 
   // ── ÇAKIŞMA DÜZELTMESİ (Sistematik Geç Kapanış Normalizasyonu) ───────────
   // Sorun: Sistemsel hata nedeniyle bir siparişin kapanışı sisteme yansımamış
@@ -5840,6 +5858,17 @@ function performansHesapla(){
       if (sonucNorm === 'kaldi' || sonucNorm.includes('kaldi')) {
         satırOrneklemeMod = 'kapali';
         kaldiSatirSayisi++;
+      }
+    }
+    // 4) Ticari Karar "Ticari Sevk" ise: en yüksek öncelikli kurallardan biri
+    //    daha — bu ürünler numune usulü seviyelendirilmez, BakılacakMiktar'daki
+    //    adet aynen kullanılır (Kaldı kuralıyla aynı mekanizma: Kapalı mod).
+    if (ticariKararCol) {
+      const ticariRaw = String(row[ticariKararCol] || '').trim();
+      const ticariNorm = ticariRaw.replace(/İ/g,'i').toLowerCase().replace(/[^a-z0-9]/g,'').replace(/ş/g,'s').replace(/ğ/g,'g').replace(/ü/g,'u').replace(/ö/g,'o').replace(/ı/g,'i').replace(/ç/g,'c');
+      if (ticariNorm.includes('ticarisevk')) {
+        satırOrneklemeMod = 'kapali';
+        ticariSevkSatirSayisi++;
       }
     }
 
@@ -6014,12 +6043,15 @@ function performansHesapla(){
     }
   });
 
-  // Kaldı özet göstergesi güncelle
+  // Kaldı / Ticari Sevk özet göstergesi güncelle
   const kaldiOzet = document.getElementById('sonuc-kaldi-ozet');
   if (kaldiOzet) {
-    if (sonucCol && kaldiSatirSayisi > 0) {
+    const ozetParcalari = [];
+    if (sonucCol && kaldiSatirSayisi > 0) ozetParcalari.push(kaldiSatirSayisi + ' satır "Kaldı"');
+    if (ticariKararCol && ticariSevkSatirSayisi > 0) ozetParcalari.push(ticariSevkSatirSayisi + ' satır "Ticari Sevk"');
+    if (ozetParcalari.length > 0) {
       kaldiOzet.style.display = 'block';
-      kaldiOzet.textContent = '🔴 ' + kaldiSatirSayisi + ' satır "Kaldı" → Kapalı mod uygulandı';
+      kaldiOzet.textContent = '🔴 ' + ozetParcalari.join(' + ') + ' → Kapalı mod uygulandı (tam adet, seviyelendirilmedi)';
     } else {
       kaldiOzet.style.display = 'none';
     }
