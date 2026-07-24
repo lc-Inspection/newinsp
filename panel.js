@@ -4174,12 +4174,22 @@ function exportToExcel() {
   }
 
   const workbook = XLSX.utils.book_new();
+  const _exportHedef = Math.max(1, parseFloat(document.getElementById('inp-verimlilik')?.value) || 100);
 
   const mainData = performansData.map(inspector => {
-    // Dashboard kartlarıyla BİREBİR aynı değer: getDispPerf() kullanılır.
-    // Eski elle-hesap farklı formül olduğundan Dashboard ile uyuşmayan
-    // değerler üretiyordu (örn. %125 yerine %121) — bu satırla giderildi.
-    const performans = getDispPerf(inspector);
+    // "Ne ödül ne ceza": nötr kayıp zaman mesai süresinden düşülüp performans
+    // CANLI Hedef Verimlilik ile yeniden hesaplanır — Dashboard kartlarıyla
+    // (ve diğer tüm ekranlarla) birebir tutarlı olması için.
+    const _adetEx = inspector.adet || 0;
+    let _mesSnEx = inspector.mesaiSure || 0;
+    const _kzSnEx = getNotrKayipDakikaForInspector(inspector.ins) * 60;
+    if (_kzSnEx > 0 && _mesSnEx > _kzSnEx) _mesSnEx -= _kzSnEx;
+    const _hedefAdetEx = inspector.hedefAdetGunluk || 450;
+    const _beklenenAdetEx = _hedefAdetEx * (_mesSnEx / GUNLUK_CALISMA_SANIYE);
+    const _hamPEx = (_adetEx > 0 && _beklenenAdetEx > 0)
+      ? Math.round((_adetEx / _beklenenAdetEx) * 100) : inspector.genelHizPerf;
+    const performans = (_hamPEx !== null && _hamPEx !== undefined)
+      ? Math.round(_hamPEx * (100 / _exportHedef)) : (inspector.verimlilikPerf ?? inspector.genelHizPerf ?? 0);
     const ti = getTeknikIncelemeSkorForInspector(inspector.ins);
     const ii = getIkinciInspectionOraniForInspector(inspector.ins);
 
