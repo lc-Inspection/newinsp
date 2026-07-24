@@ -3041,11 +3041,22 @@ function getEfektifPerfSeviye(inspector, performansVal) {
     cls = 'perf-verypoor';  label = t.perf_verypoor;
   }
 
+  // ── YENİ: ADET BAZLI PERFORMANS % ────────────────────────────────────
+  // Gösterilen "PERFORMANS %" artık Verimlilik Perf formülü yerine doğrudan
+  // Mesaisiz Günlük Ort. ÷ Günlük Hedef Adet × 100 olarak hesaplanıyor.
+  // Böylece kategori (İyi/Orta/Gelişime Açık/Zayıf) ile gösterilen % her
+  // zaman aynı metrikten (ham üretim adedi) geldiği için tutarlı olur —
+  // eskiden "Orta" kategorisinde %112 gibi kafa karıştırıcı sayılar
+  // görünebiliyordu, artık göremezsin.
+  const hedefAdetGunlukPerf = inspector.hedefAdetGunluk || 410;
+  const adetBazliPerf = hedefAdetGunlukPerf > 0 ? Math.round((gunlukOrtNormal / hedefAdetGunlukPerf) * 100) : 0;
+
   return {
     cls,
     label,
     demoted: false, // artık "yüzde düşürme" kavramı yok, kategori doğrudan adetten geliyor
-    gunlukOrtNormal
+    gunlukOrtNormal,
+    adetBazliPerf
   };
 }
 
@@ -3110,7 +3121,7 @@ function updateSummaryStats(inspectors) {
     i.verimlilikPerf !== null && i.verimlilikPerf !== undefined || i.genelHizPerf !== null && i.genelHizPerf !== undefined
   );
   const avgPerformans = validPerformances.length > 0 
-    ? Math.round(validPerformances.reduce((sum, i) => sum + getPerfVal(i), 0) / validPerformances.length)
+    ? Math.round(validPerformances.reduce((sum, i) => sum + getEfektifPerfSeviye(i, i.genelHizPerf || 0).adetBazliPerf, 0) / validPerformances.length)
     : 0;
 
   const avgWorkingDays = total > 0 
@@ -3434,7 +3445,7 @@ function showPerfSeviyeDetay(seviyeKey) {
       const efektifKey = getEfektifPerfSeviye(i, p).cls.replace('perf-', '');
       return efektifKey === seviyeKey;
     })
-    .sort((a, b) => getDispPerf(b) - getDispPerf(a));
+    .sort((a, b) => getEfektifPerfSeviye(b, b.genelHizPerf || 0).adetBazliPerf - getEfektifPerfSeviye(a, a.genelHizPerf || 0).adetBazliPerf);
 
   if (subEl) subEl.textContent = `${liste.length} inspector bu seviyede`;
 
@@ -3445,9 +3456,9 @@ function showPerfSeviyeDetay(seviyeKey) {
   }
 
   const rows = liste.map(insp => {
-    const perf = getDispPerf(insp);
-    const _efektif = getEfektifPerfSeviye(insp, perf);
-    const perfColor = getProgressColor(perf);
+    const _efektif = getEfektifPerfSeviye(insp, insp.genelHizPerf || 0);
+    const perf = _efektif.adetBazliPerf;
+    const perfColor = ({'perf-good':'#2563eb','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'})[_efektif.cls] || getProgressColor(perf);
     const otDk = Math.round((insp.toplamMesaistiSaniye || 0) / 60);
     const otHtml = otDk > 0
       ? `<span style="color:#E65100;font-weight:600">🌙 ${otDk}dk</span>`
@@ -3471,7 +3482,7 @@ function showPerfSeviyeDetay(seviyeKey) {
 
   const toplamAdet = liste.reduce((s, i) => s + (i.adet || 0), 0);
   const ortGun = Math.round(liste.reduce((s, i) => s + (i.gunSayisi || 0), 0) / liste.length);
-  const ortPerf = Math.round(liste.reduce((s, i) => s + getDispPerf(i), 0) / liste.length);
+  const ortPerf = Math.round(liste.reduce((s, i) => s + getEfektifPerfSeviye(i, i.genelHizPerf || 0).adetBazliPerf, 0) / liste.length);
 
   content.innerHTML = `
     <div style="max-height:50vh;overflow-y:auto;border:1px solid var(--border2);border-radius:10px">
@@ -3764,33 +3775,17 @@ function renderInspectorCards() {
   const cards = currentPageInspectors.map(inspector => {
     // Düz. Performans = Ham Performans × (100 / Hedef%) — kartlarda bu gösterilir.
     // "Ne ödül ne ceza" ilkesi: nötr sebeplerden (Ürün Olmaması, Insp. Lokasyon
-    // Değişimi, Diğer) kaynaklanan kayıp zaman, mesai süresinden (paydadan)
-    // düşülüp performans BUNA GÖRE yeniden hesaplanır — bkz. getDispPerf/
-    // getNotrKayipDakikaForInspector. Burada AYRICA (getDispPerf çağırmak
-    // yerine) hesaplanmasının sebebi: bu kart canlı Hedef Verimlilik input
-    // değerini (currentHedef) kullanıyor, inspector.hedefVerimlilik'teki
-    // (son hesaplamadan kalma, potansiyel olarak eski) değeri değil.
-    const hamPerf = inspector.genelHizPerf;
-    const _adetKart = inspector.adet || 0;
-    let mesaiSnKart = inspector.mesaiSure || 0;
-    const notrKayipSnKart = getNotrKayipDakikaForInspector(inspector.ins) * 60;
-    if (notrKayipSnKart > 0 && mesaiSnKart > notrKayipSnKart) mesaiSnKart -= notrKayipSnKart;
-    const _hedefAdetKart = inspector.hedefAdetGunluk || 410;
-    const _beklenenAdetKart = _hedefAdetKart * (mesaiSnKart / GUNLUK_CALISMA_SANIYE);
-    // ÖNEMLİ DÜZELTME: eskiden burada ÖNCE (adet/beklenenAdet*100) yuvarlanıp
-    // SONRA o yuvarlanmış sayı tekrar (*100/hedef) ile İKİNCİ KEZ
-    // yuvarlanıyordu — bu çifte yuvarlama, getDispPerf() (Sheets/export'a
-    // giden TEK yuvarlamalı hesap) ile farklı sonuç verebiliyordu (örn. aynı
-    // kişi kartta %97, Sheets'te %95 gibi). Artık TEK seferde yuvarlanıyor.
-    const duzPerf = (_adetKart > 0 && _beklenenAdetKart > 0)
-      ? Math.round((_adetKart / _beklenenAdetKart) * 100 * (100 / currentHedef))
-      : (hamPerf !== null && hamPerf !== undefined ? Math.round(hamPerf * (100 / currentHedef)) : null);
-    const performansVal = duzPerf ?? 0;
-    const _efektifSeviye = getEfektifPerfSeviye(inspector, performansVal);
+    // YENİ: Kartta gösterilen "PERFORMANS %" artık Verimlilik Perf formülü
+    // yerine doğrudan Mesaisiz Günlük Ort. ÷ Günlük Hedef Adet × 100'den
+    // geliyor (bkz. getEfektifPerfSeviye → adetBazliPerf). Bu sayede
+    // gösterilen % ile düştüğü kategori (İyi/Orta/Gelişime Açık/Zayıf)
+    // her zaman aynı metrikten gelir, birbirini tutar.
+    const _efektifSeviye = getEfektifPerfSeviye(inspector, inspector.genelHizPerf || 0);
+    const performansVal = _efektifSeviye.adetBazliPerf;
     const performansClass = _efektifSeviye.cls;
-    const performansText = duzPerf !== null ? duzPerf + '%' : '—';
+    const performansText = performansVal + '%';
     const progressAngle = Math.min(360, (performansVal / 100) * 360);
-    const progressColor = getProgressColor(performansVal);
+    const progressColor = ({'perf-good':'#2563eb','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'})[performansClass] || getProgressColor(performansVal);
     
     const ini = inspector.ins.split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
     const klasmanCount = Object.keys(inspector.klasmanlar).length;
