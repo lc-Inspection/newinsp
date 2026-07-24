@@ -104,10 +104,13 @@ function aoRefreshSheetsData() {
           id: list.length + 1, klasman: klasmanAd,
           adet: k.adet, kontrolAdetSuresi: k.kontrolAdetSuresi || 0,
           istasyonSuresi: k.istasyonSuresi || 0, standartSure: k.standartSure || 0,
+          standartSureHam: k.standartSureHam != null ? k.standartSureHam : (k.standartSure || 0),
           kayitFiiliSure: k.kayitFiiliSure || 0, baslangic: k.baslangic,
           bitis: k.bitis, tarihGecerli: k.tarihGecerli,
           ortalamaKontrolSn: k.adet > 0 && k.kayitFiiliSure > 0 ? Math.round(k.kayitFiiliSure / k.adet) : null,
-          talepNo: k.talepNo || ''
+          talepNo: k.talepNo || '',
+          inspectionTipi: k.inspectionTipi || '',
+          is2Kalite: k.is2Kalite || false
         });
       });
     });
@@ -123,7 +126,17 @@ function aoRefreshSheetsData() {
           if (!Array.isArray(kayitlarArr) || !kayitlarArr.length) return;
           var hedefKey = insKlasmanKeys.find(function(k) { return k === klasmanAd; })
             || insKlasmanKeys.find(function(k) { return norm(k) === norm(klasmanAd); });
-          if (!hedefKey) return;
+          var klasmanYeniMi = !hedefKey;
+          if (klasmanYeniMi) {
+            // Bu klasman yerel oturumda hiç tanımlı değil (örn. başka bir
+            // cihazdan yüklenmiş / bu tarayıcıda henüz hesaplanmamış bir
+            // klasman). Eskiden bu durumda veri sessizce atlanıyordu — bu da
+            // bazı inspectorlerin "Veri Çek" sonrası hiç kayıt göstermemesine
+            // yol açıyordu. Artık atmak yerine yeni bir klasman girişi olarak
+            // ekleniyor.
+            hedefKey = klasmanAd;
+            inspector.klasmanlar[hedefKey] = { kayitlar: [], adet: 0, standartSure: 0, kayitFiiliSure: 0, hizPerf: null };
+          }
           inspector.klasmanlar[hedefKey].kayitlar = kayitlarArr.map(function(r) {
             return Object.assign({}, r, {
               kontrolAdetSuresi: r.kontrolAdetSuresi || 0,
@@ -135,6 +148,9 @@ function aoRefreshSheetsData() {
               bitis: r.bitis ? (function() { var d = new Date(r.bitis); return isNaN(d.getTime()) ? null : d; })() : null
             });
           });
+          if (klasmanYeniMi) {
+            inspector.klasmanlar[hedefKey].adet = inspector.klasmanlar[hedefKey].kayitlar.reduce(function(s, r) { return s + (r.adet || 0); }, 0);
+          }
         });
         // Overlay açıksa tabloyu güncelle
         var ov = document.getElementById('analiz-overlay');
