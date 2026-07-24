@@ -1972,17 +1972,12 @@ async function pushPerformansManual(ev) {
       });
       // "Ne ödül ne ceza" düzeltmesi CANLI _manualHedef ile: aksi halde
       // ekranda gösterilen (düzeltilmiş) yüzde ile Sheets/DB'ye gönderilen
-      // yüzde birbirini tutmaz. getDispPerf() çağırmıyoruz çünkü o,
-      // inspector.hedefVerimlilik'teki olası ESKİ/durağan hedefi kullanır.
-      const _adetPush = inspector.adet || 0;
-      let mesaiSnPush = inspector.mesaiSure || 0;
-      const notrKayipSnPush = getNotrKayipDakikaForInspector(inspector.ins) * 60;
-      if (notrKayipSnPush > 0 && mesaiSnPush > notrKayipSnPush) mesaiSnPush -= notrKayipSnPush;
-      const _hedefAdetPush = inspector.hedefAdetGunluk || 410;
-      const _beklenenAdetPush = _hedefAdetPush * (mesaiSnPush / GUNLUK_CALISMA_SANIYE);
-      const hamPerfPush = (_adetPush > 0 && _beklenenAdetPush > 0)
-        ? Math.round((_adetPush / _beklenenAdetPush) * 100) : inspector.genelHizPerf;
-      const verimlilikPerfPush = hamPerfPush != null ? Math.round(hamPerfPush * (100 / _manualHedef)) : inspector.verimlilikPerf;
+      // yüzde birbirini tutmaz. ÖNEMLİ: Kartta gösterilen "PERFORMANS %"
+      // artık Mesaisiz Günlük Ort. ÷ Günlük Hedef Adet × 100 formülünü
+      // kullanıyor (eski adet/beklenenAdet formülü değil) — burada da
+      // BİREBİR aynı formül (getEfektifPerfSeviye().adetBazliPerf)
+      // kullanılıyor ki kart ile Sheets'e giden sayı asla farklı çıkmasın.
+      const verimlilikPerfPush = getEfektifPerfSeviye(inspector, inspector.genelHizPerf || 0).adetBazliPerf;
 
       return {
         ...inspector,
@@ -2023,7 +2018,7 @@ async function pushPerformansManual(ev) {
         standartSureDk: row.standartSure ? Math.round(row.standartSure / 60) : 0,
         mesaiSureDk:    row.mesaiSure    ? Math.round(row.mesaiSure / 60)    : 0,
         genelHizPerf:   row.genelHizPerf,
-        verimlilikPerf: row.genelHizPerf != null ? Math.round(row.genelHizPerf * (100 / _rowsHedef)) : row.verimlilikPerf,
+        verimlilikPerf: getEfektifPerfSeviye(row, row.genelHizPerf || 0).adetBazliPerf,
         hedefVerimlilik: _rowsHedef,
         klasmanOzet: Object.entries(row.klasmanlar || {})
           .map(([k,v]) => `${k}:${v.adet || 0}adet(${Math.round(v.hizPerf) || 0}%)`)
@@ -6219,9 +6214,16 @@ function performansHesapla(){
       toplamOvertimeAdet: inspectorData.toplamOvertimeAdet || 0
     };
 
-    
+    // ÖNEMLİ DÜZELTME: map[ins].verimlilikPerf artık, obje tamamen kurulduktan
+    // SONRA, Dashboard kartındaki "PERFORMANS %" ile BİREBİR AYNI formülle
+    // (Mesaisiz Günlük Ort. ÷ Günlük Hedef Adet × 100) üzerine yazılıyor.
+    // Bu alanı doğrudan okuyan TÜM alt sistemler (Sheets/SharePoint export'ları,
+    // Çeyrek Arşivi, manuel gönder butonu vb.) böylece otomatik olarak kartla
+    // aynı sayıyı gösterir — ayrı ayrı her birini güncellemeye gerek kalmaz.
+    map[ins].verimlilikPerf = getEfektifPerfSeviye(map[ins], map[ins].genelHizPerf || 0).adetBazliPerf;
+
     // Debug log
-    console.log(`[${ins}] Gün:${mesaiHesap?.gunSayisi || 0} Adet:${toplamAdet} HedefAdet(gün):${hedefAdetGunluk} BeklenenAdet:${Math.round(beklenenAdet)} Mesai:${Math.round(mesaiSureSn/60)}dk Mesaisti:${Math.round((mesaiHesap?.toplamMesaistiSaniye||0)/60)}dk Performans:${performans}% VPerf:${performans !== null ? Math.round(performans*(100/verimlilikHedef)) : null}%`);
+    console.log(`[${ins}] Gün:${mesaiHesap?.gunSayisi || 0} Adet:${toplamAdet} HedefAdet(gün):${hedefAdetGunluk} BeklenenAdet:${Math.round(beklenenAdet)} Mesai:${Math.round(mesaiSureSn/60)}dk Mesaisti:${Math.round((mesaiHesap?.toplamMesaistiSaniye||0)/60)}dk Performans:${performans}% VPerf:${map[ins].verimlilikPerf}%`);
   });
 
   const liste = Object.values(map).sort((a, b) => {
