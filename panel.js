@@ -3847,8 +3847,8 @@ function renderInspectorCards() {
           </div>
           <div style="text-align:center">
             <div style="position:relative;display:inline-block">
-              <div class="circular-progress" style="--progress-angle: ${progressAngle}deg; --progress-color: ${progressColor};">
-                <div class="circular-progress-text ${performansClass}">${performansText}</div>
+              <div class="circular-progress" style="--progress-angle: ${progressAngle}deg; --progress-color: ${progressColor};" title="${performansText}">
+                <div class="circular-progress-text circular-progress-text--label ${performansClass}">${performansSeviyesi}</div>
               </div>
               ${currentHedef !== 100 ? `<div style="position:absolute;top:-6px;right:-6px;background:var(--amber);color:#fff;font-size:8px;font-weight:700;padding:2px 5px;border-radius:8px;line-height:1.2">H%${currentHedef}</div>` : ''}
             </div>
