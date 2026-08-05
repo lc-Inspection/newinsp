@@ -5199,9 +5199,8 @@ function renderPerfTabloFromData(page) {
             box-shadow:0 2px 10px ${displayCm.accent}2A;">
             <div style="width:46px;height:46px;border-radius:50%;background:#fff;
               display:flex;flex-direction:column;align-items:center;justify-content:center;
-              box-shadow:inset 0 1px 3px rgba(0,0,0,.07);">
-              <div style="font-size:13px;font-weight:800;color:${displayCm.accent};font-family:'DM Mono',monospace;line-height:1;">${displayPerf}%</div>
-              <div style="font-size:7px;color:var(--muted);letter-spacing:.4px;text-transform:uppercase;">perf</div>
+              box-shadow:inset 0 1px 3px rgba(0,0,0,.07);" title="${displayPerf}%">
+              <div style="font-size:8.5px;font-weight:800;color:${displayCm.accent};line-height:1.15;text-align:center;padding:0 2px;letter-spacing:.2px;">${displayCm.label}</div>
             </div>
           </div>
         </div>
