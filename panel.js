@@ -3477,7 +3477,7 @@ function showPerfSeviyeDetay(seviyeKey) {
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${formatTR(ortMesaili)}</td>
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${formatTR((insp.adet || 0))}</td>
         <td style="padding:9px 10px;text-align:center">${otHtml}</td>
-        <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;font-weight:700;color:${perfColor}">${perf}%</td>
+        <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;font-weight:700;color:${perfColor}" title="${perf}%">${_efektif.label}</td>
       </tr>`;
   }).join('');
 
