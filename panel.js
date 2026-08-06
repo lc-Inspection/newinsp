@@ -6627,7 +6627,13 @@ function showSlide(index) {
   const hamPerf = Math.round(inspector.genelHizPerf ?? 0);
   const performansClass = getPerformanceClass(performans);
   
-  const performansLevel = getPerformanceLevelLabel(performans);
+  // Seviye etiketi artık panelin her yerinde (Dashboard/Ekibim/Ekip
+  // Yöneticileri) kullanılan TEK doğru kaynaktan geliyor — getEfektifPerfSeviye
+  // (Mesaisiz Günlük Ort. ÷ 450/gün hedef). Eskiden burada ayrı bir %
+  // eşiği (getPerformanceLevelLabel) kullanılıyordu ve aynı kişi için
+  // farklı bir seviye gösterebiliyordu.
+  const _efektifSlide = getEfektifPerfSeviye(inspector, inspector.genelHizPerf || 0);
+  const performansLevel = _efektifSlide.label;
   
   const ini = inspector.ins.split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
   
