@@ -2910,8 +2910,11 @@ function showPage(id, navEl){
   if(id === 'dashboard') {
     renderDashboard();
   } else if(id === 'ceyrek-performans') {
-    populateCeyrekEkipFiltre();
-    renderCeyrekPerformansTablosu(true);
+    // Ekip yöneticisi ataması zamanla değişebilir (inspector başka bir
+    // yöneticiye geçebilir) — bu yüzden sayfa her açıldığında _usersCache
+    // ZORLA tazelenir, önceki oturumdan kalma eski atama kullanılmaz.
+    // Filtre dropdown'ı VE tablo, taze veri gelene kadar bekletilir.
+    populateCeyrekEkipFiltre().then(() => renderCeyrekPerformansTablosu(true));
   } else if(id === 'canli') {
     initCanliPage();
   } else if(id === 'performans') {
@@ -3315,7 +3318,10 @@ function _ceyrekMetrikHucre(veri) {
 async function populateCeyrekEkipFiltre() {
   const sel = document.getElementById('ceyrek-ekip-filtre');
   if (!sel) return;
-  if (!_usersCache.length) await _silentLoadUsersCache();
+  // Önceki dönemden kalma eski ekip atamasını kullanmamak için HER ZAMAN
+  // taze çek (eskiden sadece _usersCache boşsa çekiliyordu — bu, bir önceki
+  // sayfa ziyaretinden kalma eski atamaların burada görünmesine sebep oluyordu).
+  await _silentLoadUsersCache();
   const managers = _usersCache.filter(u => (u.team || []).length > 0);
   const oncekiSecim = sel.value;
   sel.innerHTML = '<option value="">👥 Tüm Ekip Yöneticileri</option>' +
