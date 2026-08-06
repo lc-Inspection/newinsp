@@ -3305,9 +3305,17 @@ function _ceyrekMetrikHucre(veri) {
   if (!veri) return '<span style="color:var(--muted2);font-size:13px">— veri yok —</span>';
   const renk = (v, tersMi) => v === null || v === undefined ? 'var(--muted2)'
     : (v >= 85 ? '#00897B' : v >= 70 ? '#F57F17' : v >= 50 ? '#EF5350' : '#B71C1C');
+  // Verimlilik artık % yerine panel genelindeki İyi/Orta/Gelişime Açık/Zayıf
+  // etiketiyle gösteriliyor (bkz. _ceyrekSeviyeFromVerimlilik) — fareyle
+  // üzerine gelince ham yüzde tooltip'te görünür.
+  const vSeviye = (veri.verimlilik !== null && veri.verimlilik !== undefined && typeof _ceyrekSeviyeFromVerimlilik === 'function')
+    ? _ceyrekSeviyeFromVerimlilik(veri.verimlilik) : null;
+  const vMetin = vSeviye ? vSeviye.label : '—';
+  const vRenk  = vSeviye ? '#' + vSeviye.color : 'var(--muted2)';
+  const vTitle = (veri.verimlilik !== null && veri.verimlilik !== undefined) ? ` title="${veri.verimlilik}%"` : '';
   return `
     <div style="font-size:12px;line-height:2">
-      <div><span style="color:var(--muted)">Verimlilik:</span> <strong style="font-size:14px;color:${renk(veri.verimlilik)}">${veri.verimlilik !== null && veri.verimlilik !== undefined ? veri.verimlilik + '%' : '—'}</strong></div>
+      <div><span style="color:var(--muted)">Verimlilik:</span> <strong style="font-size:14px;color:${vRenk}"${vTitle}>${vMetin}</strong></div>
       <div><span style="color:var(--muted)">İkinci Insp.:</span> <strong style="font-size:14px;color:${renk(veri.ikinciInsp)}">${veri.ikinciInsp !== null && veri.ikinciInsp !== undefined ? veri.ikinciInsp + '%' : '—'}</strong></div>
       <div><span style="color:var(--muted)">Teknik Skor:</span> <strong style="font-size:14px;color:${renk(veri.teknikSkor)}">${veri.teknikSkor !== null && veri.teknikSkor !== undefined ? veri.teknikSkor + '%' : '—'}</strong></div>
     </div>`;
@@ -3509,6 +3517,13 @@ function exportCeyrekArsiviToExcel() {
     const QC = ['Q1', 'Q2', 'Q3', 'Q4'];
     const QLABEL = { Q1: 'Q1 (Şub-Mar-Nis)', Q2: 'Q2 (May-Haz-Tem)', Q3: 'Q3 (Ağu-Eyl-Eki)', Q4: 'Q4 (Kas-Ara-Oca)' };
     const fmtV = v => (v === null || v === undefined) ? '—' : v + '%';
+    // Verimlilik artık Excel'de de ekrandaki gibi İyi/Orta/Gelişime Açık/Zayıf
+    // etiketiyle gösteriliyor — ham yüzde değil.
+    const fmtVSeviye = v => {
+      if (v === null || v === undefined) return '—';
+      const s = _ceyrekSeviyeFromVerimlilik(v);
+      return s ? s.label : '—';
+    };
 
     const tarihStr = _bugununTarihiYerel();
     const wb = XLSX.utils.book_new();
@@ -3541,7 +3556,7 @@ function exportCeyrekArsiviToExcel() {
       };
       QC.forEach(q => {
         const v = k[q];
-        row[`${q} Verimlilik`]   = v ? fmtV(v.verimlilik) : '—';
+        row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.verimlilik) : '—';
         row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
         row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
       });
@@ -3580,7 +3595,7 @@ function exportCeyrekArsiviToExcel() {
         };
         QC.forEach(q => {
           const v = k[q];
-          row[`${q} Verimlilik`]   = v ? fmtV(v.verimlilik) : '—';
+          row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.verimlilik) : '—';
           row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
           row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
         });
