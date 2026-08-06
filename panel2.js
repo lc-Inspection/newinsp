@@ -239,14 +239,27 @@ function _aoRenderStats() {
 
   function perfColor(p){ return p >= 95 ? '#00897B' : p >= 85 ? '#1565C0' : p >= 70 ? '#F57F17' : p >= 50 ? '#EF5350' : '#B71C1C'; }
 
-  var duzPerfSeviye = (typeof getPerformanceLevelLabel === 'function') ? getPerformanceLevelLabel(duzPerf) : (duzPerf + '%');
+  // ÖNEMLİ: Seviye etiketi (İyi/Orta/Gelişime Açık/Zayıf) artık panelin HER
+  // YERİNDE (Dashboard kartı, Ekibim, Ekip Yöneticileri) kullanılan TEK
+  // doğru kaynaktan — getEfektifPerfSeviye (Mesaisiz Günlük Ort. ÷ 450/gün
+  // hedef) — geliyor. Eskiden burada ayrı/farklı bir % eşiği (getPerformanceLevelLabel,
+  // ≥85/≥70/≥50) kullanılıyordu ve bu da aynı kişi için Dashboard'da "İyi"
+  // görünürken burada "Orta" gibi FARKLI bir seviye göstermesine yol
+  // açıyordu. duzPerf hâlâ hesaplanıyor ama sadece referans/tooltip amaçlı.
+  var _efektifAo = (typeof getEfektifPerfSeviye === 'function')
+    ? getEfektifPerfSeviye(_aoInspector, _aoInspector.genelHizPerf || 0)
+    : null;
+  var duzPerfSeviye = _efektifAo ? _efektifAo.label : ((typeof getPerformanceLevelLabel === 'function') ? getPerformanceLevelLabel(duzPerf) : (duzPerf + '%'));
+  var duzPerfColor  = _efektifAo
+    ? ({'perf-good':'#2563eb','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'})[_efektifAo.cls] || perfColor(duzPerf)
+    : perfColor(duzPerf);
 
   var cards = [
     ['📦',(translations[currentLang]||translations.tr).stat_total_product,   String(totalAdet), 'var(--navy)'],
     ['🗓️','ÇALIŞMA GÜN SAYISI',  String(calismaGunSayisi), 'var(--navy)'],
     ['🕐','GERÇEKLEŞEN (NORMAL)',   normalCalismaSn > 0 ? _aoFmtSn(normalCalismaSn) : '—', normalCalismaSn > 0 ? '#00897B' : '#5A7FA8'],
     ['🌙','MESAİ SÜRESİ (OVERTIME)',  overtimeSn > 0 ? _aoFmtSn(overtimeSn) : '—', overtimeSn > 0 ? '#E65100' : 'var(--navy)'],
-    ['📊',(translations[currentLang]||translations.tr).adj_perf_label_upper, duzPerfSeviye, perfColor(duzPerf), duzPerf + '%']
+    ['📊',(translations[currentLang]||translations.tr).adj_perf_label_upper, duzPerfSeviye, duzPerfColor, duzPerf + '%']
   ];
   document.getElementById('ao-stats-grid').innerHTML = cards.map(function(c){
     return '<div style="background:#fff;border:1px solid #DDEEFF;border-radius:10px;padding:14px 8px;text-align:center;" title="' + (c[4] || '') + '">'
