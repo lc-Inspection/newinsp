@@ -6759,7 +6759,7 @@ function showSlide(index) {
               />
             </svg>
             <div class="performance-circle-text">
-              <div class="performance-circle-value" id="perf-circle-value">0%</div>
+              <div class="performance-circle-value performance-circle-value--label" id="perf-circle-value" title="${performans}%">${performansLevel}</div>
               <div class="performance-circle-label">${inspector.verimlilikPerf !== null && inspector.verimlilikPerf !== undefined ? t.adj_perf_label_upper : t.avg_perf_plain}</div>
             </div>
           </div>
@@ -6784,12 +6784,13 @@ function showSlide(index) {
   updateSlideFooter(index);
 }
 
-// Performans yüzdesini (sayı) ve SVG çemberini (stroke-dashoffset) eş zamanlı,
-// aynı easing eğrisiyle 0'dan hedef değere animasyonlu olarak doldurur.
+// Performans çemberini (SVG halkası, stroke-dashoffset) animasyonlu olarak
+// 0'dan hedef değere doldurur. Dairenin İÇİNDEKİ metin artık % yerine sabit
+// bir performans seviyesi adı (İyi/Orta/Gelişime Açık/Zayıf) gösterdiği için
+// o metin ayrıca sayı sayarak animasyonlu YAZILMAZ — sadece halka dolar.
 function animatePerformanceCircle(targetPercent, circumference) {
-  const valueEl  = document.getElementById('perf-circle-value');
   const circleEl = document.getElementById('perf-circle-progress');
-  if (!valueEl || !circleEl) return;
+  if (!circleEl) return;
 
   const duration = 1200; // ms - eski CSS transition süresiyle aynı
   const startTime = performance.now();
@@ -6801,9 +6802,6 @@ function animatePerformanceCircle(targetPercent, circumference) {
     const rawProgress = Math.min(elapsed / duration, 1);
     const eased = easeOutCubic(rawProgress);
 
-    const currentVal = Math.round(eased * targetPercent);
-    valueEl.textContent = currentVal + '%';
-
     const currentOffset = circumference - (Math.min(eased * targetPercent, 150) / 150) * circumference;
     circleEl.style.strokeDashoffset = currentOffset;
 
@@ -6811,7 +6809,6 @@ function animatePerformanceCircle(targetPercent, circumference) {
       requestAnimationFrame(frame);
     } else {
       // Son karede tam hedef değere kilitle (yuvarlama hatalarını önler)
-      valueEl.textContent = targetPercent + '%';
       const finalOffset = circumference - (Math.min(targetPercent, 150) / 150) * circumference;
       circleEl.style.strokeDashoffset = finalOffset;
     }
