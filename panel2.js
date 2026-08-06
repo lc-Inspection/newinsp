@@ -239,15 +239,17 @@ function _aoRenderStats() {
 
   function perfColor(p){ return p >= 95 ? '#00897B' : p >= 85 ? '#1565C0' : p >= 70 ? '#F57F17' : p >= 50 ? '#EF5350' : '#B71C1C'; }
 
+  var duzPerfSeviye = (typeof getPerformanceLevelLabel === 'function') ? getPerformanceLevelLabel(duzPerf) : (duzPerf + '%');
+
   var cards = [
     ['📦',(translations[currentLang]||translations.tr).stat_total_product,   String(totalAdet), 'var(--navy)'],
     ['🗓️','ÇALIŞMA GÜN SAYISI',  String(calismaGunSayisi), 'var(--navy)'],
     ['🕐','GERÇEKLEŞEN (NORMAL)',   normalCalismaSn > 0 ? _aoFmtSn(normalCalismaSn) : '—', normalCalismaSn > 0 ? '#00897B' : '#5A7FA8'],
     ['🌙','MESAİ SÜRESİ (OVERTIME)',  overtimeSn > 0 ? _aoFmtSn(overtimeSn) : '—', overtimeSn > 0 ? '#E65100' : 'var(--navy)'],
-    ['📊',(translations[currentLang]||translations.tr).adj_perf_label_upper, duzPerf + '%', perfColor(duzPerf)]
+    ['📊',(translations[currentLang]||translations.tr).adj_perf_label_upper, duzPerfSeviye, perfColor(duzPerf), duzPerf + '%']
   ];
   document.getElementById('ao-stats-grid').innerHTML = cards.map(function(c){
-    return '<div style="background:#fff;border:1px solid #DDEEFF;border-radius:10px;padding:14px 8px;text-align:center;">'
+    return '<div style="background:#fff;border:1px solid #DDEEFF;border-radius:10px;padding:14px 8px;text-align:center;" title="' + (c[4] || '') + '">'
       + '<div style="font-size:18px;margin-bottom:4px;">' + c[0] + '</div>'
       + '<div style="font-size:18px;font-weight:700;color:' + c[3] + ';font-family:\'DM Mono\',monospace;line-height:1.2;">' + c[2] + '</div>'
       + '<div style="font-size:9px;color:#5A7FA8;text-transform:uppercase;letter-spacing:.6px;margin-top:4px;">' + c[1] + '</div>'
