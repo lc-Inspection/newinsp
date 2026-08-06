@@ -3403,6 +3403,187 @@ function changeCeyrekSayfa(delta) {
   renderCeyrekPerformansTablosu();
 }
 
+// ── Çeyrek Performans Arşivi: Excel'e Aktar ─────────────────────────────
+// Ekrandaki tabloyla AYNI filtreyi (arama + ekip yöneticisi) uygular, sonra
+// her inspector için "referans seviye"yi (İyi/Orta/Gelişime Açık/Zayıf)
+// belirler — bu, o an içinde bulunulan çeyrekten geriye doğru bakarak
+// bulunan İLK dolu (veri girilmiş) çeyreğin Verimlilik değerine göre
+// hesaplanır (yani en güncel bilinen durum). Rapor: bir "Özet" sayfası,
+// tüm çeyreklerin göründüğü bir "Tüm Veriler" sayfası, ve her seviye için
+// AYRI birer sayfa (İyi / Orta / Gelişime Açık / Zayıf) içerir.
+function _ceyrekSeviyeFromVerimlilik(v) {
+  // ceyrekArsivi'ndeki 'verimlilik' değeri zaten adet-bazlı % olarak
+  // saklanıyor (getEfektifPerfSeviye(...).adetBazliPerf — 450/gün hedefine
+  // göre). Aynı fonksiyonun 400/360/300 (adet/gün) eşiklerinin % karşılığı:
+  // 400/450≈%89, 360/450=%80, 300/450≈%67.
+  if (v === null || v === undefined) return null;
+  if (v >= 89) return { key: 'iyi',    label: 'İyi',           color: '2563EB', bg: 'E3F2FD' };
+  if (v >= 80) return { key: 'orta',   label: 'Orta',          color: 'F57F17', bg: 'FFF8E1' };
+  if (v >= 67) return { key: 'acik',   label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE' };
+  return              { key: 'zayif',  label: 'Zayıf',         color: 'B71C1C', bg: 'FFEBEE' };
+}
+
+function _ceyrekReferansSeviye(kayit) {
+  const suankiCeyrek = _ayToQuarter(new Date().getMonth() + 1);
+  const siraQ = ['Q1', 'Q2', 'Q3', 'Q4'];
+  const startIdx = siraQ.indexOf(suankiCeyrek);
+  // Şu anki çeyrekten başlayıp geriye doğru dolaşarak ilk dolu çeyreği bul
+  for (let i = 0; i < 4; i++) {
+    const q = siraQ[(startIdx - i + 4) % 4];
+    const veri = kayit[q];
+    if (veri && veri.verimlilik !== null && veri.verimlilik !== undefined) {
+      return { ceyrek: q, veri, seviye: _ceyrekSeviyeFromVerimlilik(veri.verimlilik) };
+    }
+  }
+  return { ceyrek: null, veri: null, seviye: null };
+}
+
+function _ceyrekExcelHeaderStyle() {
+  return {
+    font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
+    fill: { fgColor: { rgb: '0B1F3A' }, patternType: 'solid' },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true }
+  };
+}
+
+function _ceyrekExcelStyleSheet(ws, colCount, rowCount, rowBgFn) {
+  ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rowCount, c: colCount - 1 } });
+  for (let C = 0; C < colCount; C++) {
+    const ref = XLSX.utils.encode_cell({ r: 0, c: C });
+    if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+    ws[ref].s = _ceyrekExcelHeaderStyle();
+  }
+  for (let R = 1; R <= rowCount; R++) {
+    const bg = rowBgFn ? rowBgFn(R) : (R % 2 === 0 ? 'FFFFFF' : 'F7FAFF');
+    for (let C = 0; C < colCount; C++) {
+      const ref = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[ref]) continue;
+      ws[ref].s = {
+        fill: { fgColor: { rgb: bg }, patternType: 'solid' },
+        alignment: { horizontal: C === 0 ? 'left' : 'center', vertical: 'center' },
+        border: {
+          bottom: { style: 'thin', color: { rgb: 'CFE3F7' } },
+          right:  { style: 'thin', color: { rgb: 'CFE3F7' } }
+        }
+      };
+    }
+  }
+}
+
+function exportCeyrekArsiviToExcel() {
+  const btn = document.getElementById('ceyrek-excel-btn');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.innerHTML = '⏳ Hazırlanıyor...'; btn.disabled = true; }
+
+  try {
+    // Ekrandaki tabloyla AYNI filtreyi uygula (arama + ekip yöneticisi)
+    let kayitlar = Object.values(ceyrekArsivi).sort((a, b) =>
+      (a.displayName || '').localeCompare(b.displayName || '', 'tr'));
+
+    const filtreMetni = (document.getElementById('ceyrek-arama')?.value || '').toLowerCase().trim();
+    const secilenEkipYoneticisi = document.getElementById('ceyrek-ekip-filtre')?.value || '';
+
+    if (secilenEkipYoneticisi) {
+      const yonetici = _usersCache.find(u => u.username === secilenEkipYoneticisi);
+      const ekipUyeleri = (yonetici?.team || []).map(ad => String(ad).toLowerCase().trim());
+      kayitlar = kayitlar.filter(k => ekipUyeleri.includes(String(k.displayName || '').toLowerCase().trim()));
+    }
+    if (filtreMetni) {
+      kayitlar = kayitlar.filter(k => (k.displayName || '').toLowerCase().includes(filtreMetni));
+    }
+
+    if (!kayitlar.length) {
+      alert('⚠️ Dışa aktarılacak çeyrek verisi yok.');
+      return;
+    }
+
+    // Her inspector için referans seviyeyi hesapla
+    const zenginlestirilmis = kayitlar.map(k => ({ k, ref: _ceyrekReferansSeviye(k) }));
+
+    const QC = ['Q1', 'Q2', 'Q3', 'Q4'];
+    const QLABEL = { Q1: 'Q1 (Şub-Mar-Nis)', Q2: 'Q2 (May-Haz-Tem)', Q3: 'Q3 (Ağu-Eyl-Eki)', Q4: 'Q4 (Kas-Ara-Oca)' };
+    const fmtV = v => (v === null || v === undefined) ? '—' : v + '%';
+
+    const tarihStr = _bugununTarihiYerel();
+    const wb = XLSX.utils.book_new();
+
+    // ── SAYFA 1: Özet ──
+    const sayac = { iyi: 0, orta: 0, acik: 0, zayif: 0, yok: 0 };
+    zenginlestirilmis.forEach(({ ref }) => {
+      if (!ref.seviye) sayac.yok++; else sayac[ref.seviye.key]++;
+    });
+    const ozetRows = [
+      { 'Kategori': 'İyi',           'Sayı': sayac.iyi },
+      { 'Kategori': 'Orta',          'Sayı': sayac.orta },
+      { 'Kategori': 'Gelişime Açık', 'Sayı': sayac.acik },
+      { 'Kategori': 'Zayıf',         'Sayı': sayac.zayif },
+      { 'Kategori': 'Veri Yok',      'Sayı': sayac.yok },
+      { 'Kategori': 'TOPLAM',        'Sayı': zenginlestirilmis.length }
+    ];
+    const wsOzet = XLSX.utils.json_to_sheet(ozetRows);
+    wsOzet['!cols'] = [{ wch: 20 }, { wch: 12 }];
+    const ozetBg = { 1: 'E3F2FD', 2: 'FFF8E1', 3: 'FFEBEE', 4: 'FFEBEE', 5: 'F0F0F0', 6: 'CFE3F7' };
+    _ceyrekExcelStyleSheet(wsOzet, 2, ozetRows.length, R => ozetBg[R] || 'FFFFFF');
+    XLSX.utils.book_append_sheet(wb, wsOzet, 'Özet');
+
+    // ── SAYFA 2: Tüm Veriler (ekrandaki tabloyla aynı, tüm çeyrekler) ──
+    const tumRows = zenginlestirilmis.map(({ k, ref }) => {
+      const row = {
+        'Inspector': _formatDisplayName(k.displayName),
+        'Referans Çeyrek': ref.ceyrek ? QLABEL[ref.ceyrek] : '—',
+        'Seviye': ref.seviye ? ref.seviye.label : 'Veri Yok'
+      };
+      QC.forEach(q => {
+        const v = k[q];
+        row[`${q} Verimlilik`]   = v ? fmtV(v.verimlilik) : '—';
+        row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
+        row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
+      });
+      return row;
+    });
+    const wsTum = XLSX.utils.json_to_sheet(tumRows);
+    wsTum['!cols'] = [{ wch: 24 }, { wch: 16 }, { wch: 15 }].concat(
+      QC.flatMap(() => [{ wch: 14 }, { wch: 14 }, { wch: 14 }])
+    );
+    _ceyrekExcelStyleSheet(wsTum, 3 + QC.length * 3, tumRows.length, R => {
+      const seviye = zenginlestirilmis[R - 1]?.ref?.seviye;
+      return seviye ? seviye.bg : 'F0F0F0';
+    });
+    XLSX.utils.book_append_sheet(wb, wsTum, 'Tüm Veriler');
+
+    // ── SAYFA 3-6: Her seviye için AYRI sayfa ──
+    const kategoriler = [
+      { key: 'iyi',   ad: 'İyi' },
+      { key: 'orta',  ad: 'Orta' },
+      { key: 'acik',  ad: 'Gelişime Açık' },
+      { key: 'zayif', ad: 'Zayıf' }
+    ];
+    kategoriler.forEach(kat => {
+      const grup = zenginlestirilmis
+        .filter(({ ref }) => ref.seviye && ref.seviye.key === kat.key)
+        .sort((a, b) => (b.ref.veri?.verimlilik || 0) - (a.ref.veri?.verimlilik || 0));
+
+      const rows = grup.map(({ k, ref }) => ({
+        'Inspector': _formatDisplayName(k.displayName),
+        'Referans Çeyrek': QLABEL[ref.ceyrek],
+        'Verimlilik':    fmtV(ref.veri.verimlilik),
+        'İkinci Insp.':  fmtV(ref.veri.ikinciInsp),
+        'Teknik Skor':   fmtV(ref.veri.teknikSkor)
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'Inspector': 'Bu seviyede inspector bulunamadı', 'Referans Çeyrek': '', 'Verimlilik': '', 'İkinci Insp.': '', 'Teknik Skor': '' }]);
+      ws['!cols'] = [{ wch: 24 }, { wch: 18 }, { wch: 13 }, { wch: 13 }, { wch: 13 }];
+      const bg = { iyi: 'E3F2FD', orta: 'FFF8E1', acik: 'FFEBEE', zayif: 'FFEBEE' }[kat.key];
+      _ceyrekExcelStyleSheet(ws, 5, rows.length || 1, () => bg);
+      XLSX.utils.book_append_sheet(wb, ws, kat.ad.length > 31 ? kat.ad.slice(0, 31) : kat.ad);
+    });
+
+    XLSX.writeFile(wb, `Ceyrek_Performans_Arsivi_${tarihStr}.xlsx`);
+  } finally {
+    if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
+  }
+}
+
 
 // ────────────────────────────
 // HEDEF VERİMLİLİK DEĞİŞİNCE
