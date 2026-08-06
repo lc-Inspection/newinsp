@@ -666,7 +666,7 @@ let animationEffect = 'slide'; // slide, fade, zoom, flip
 // APP CONFIG (Tüm Ayarlar)
 // ────────────────────────────
 const APP_CONFIG_KEY = 'lc_inspection_config';
-const DEFAULT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzvWud7-lMANAZCBxODIbj1_iv6nMsCkaJ8FxVEppDvxgNK2kxvRl6jPIZQhhlE77Q3/exec'; // ARTIK KULLANILMIYOR (referans için tutuluyor)
+const DEFAULT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzrARAnKp2iqx4JsrXjnHdiSFpYgJtFPKWbZCPWQsXkgHUfpUlmmIx_d0Zom1gItq0T/exec'; // ARTIK KULLANILMIYOR (referans için tutuluyor)
 
 // ─── cPanel/MySQL Backend API'si — TÜM veri artık buradan geçiyor ───
 // Performans, Klasmanlar, Config, Kullanıcılar, Kayıp Zaman, Teknik İnceleme,
@@ -2948,10 +2948,17 @@ function getPerformanceClass(performans) {
 // (düşürmeye) devam eder.
 const NOTR_KAYIP_SEBEPLERI = ['Ürün Olmaması', 'Insp. Lokasyon Değişimi'];
 
+// NOT: Yalnızca inspector'ın ŞU AN yüklü olan performans döneminin tarih
+// aralığına denk gelen kayıtlar sayılır — önceki dönemlerden (örn. bir
+// önceki çeyrek) kalan kayıp zaman kayıtları performansa YANSIMAZ
+// (bkz. _inspectorYukluTarihAraligi, aşağıda tanımlı).
 function getNotrKayipDakikaForInspector(inspectorName) {
   const nameNorm = String(inspectorName || '').toLowerCase().trim();
+  const aralik = (typeof _inspectorYukluTarihAraligi === 'function') ? _inspectorYukluTarihAraligi(inspectorName) : null;
   return kayipZamanData
-    .filter(r => String(r.inspector || '').toLowerCase().trim() === nameNorm && NOTR_KAYIP_SEBEPLERI.includes(r.sebep))
+    .filter(r => String(r.inspector || '').toLowerCase().trim() === nameNorm
+      && NOTR_KAYIP_SEBEPLERI.includes(r.sebep)
+      && (typeof _kayipKaydiAraligaUyuyorMu === 'function' ? _kayipKaydiAraligaUyuyorMu(r, aralik) : true))
     .reduce((sum, r) => sum + (r.sureDk || 0), 0);
 }
 
@@ -8848,26 +8855,77 @@ async function fetchTeknikHedefler() {
   }
 }
 
+// ─── Yüklü Performans Verisinin Tarih Aralığı ───
+// Bir inspector için, o an Dashboard'a yüklü olan Excel verisinin kapsadığı
+// [ilk gün, son gün] tarih aralığını döner (inspector.gunlukDetay üzerinden
+// — bkz. hesaplaGunlukMesaiSuresi). Bu aralık, "Değerlendirme Dışı Kayıtlar"
+// (kayıp zaman) filtrelemesinde kullanılır: ÖNCEKİ bir performans döneminde
+// (örn. Q2/Temmuz) girilmiş kayıp zaman kayıtları, ŞU AN yüklü olan farklı
+// bir dönemin (örn. Q3/Ağustos) verisine YANSIMAMALI. Veri yoksa null döner.
+function _inspectorYukluTarihAraligi(inspectorName) {
+  const nameNorm = String(inspectorName || '').toLowerCase().trim();
+  const insp = (typeof performansData !== 'undefined' ? performansData : []).find(
+    p => String(p.ins || '').toLowerCase().trim() === nameNorm
+  );
+  if (!insp || !insp.gunlukDetay || !insp.gunlukDetay.length) return null;
+
+  let min = null, max = null;
+  insp.gunlukDetay.forEach(gunStr => {
+    const d = new Date(gunStr);
+    if (isNaN(d)) return;
+    if (!min || d < min) min = d;
+    if (!max || d > max) max = d;
+  });
+  if (!min || !max) return null;
+
+  min = new Date(min.getFullYear(), min.getMonth(), min.getDate(), 0, 0, 0, 0);
+  max = new Date(max.getFullYear(), max.getMonth(), max.getDate(), 23, 59, 59, 999);
+  return { min, max };
+}
+
+// Bir kayıp zaman kaydının tarihinin, verilen aralığın içinde olup
+// olmadığını kontrol eder. Aralık bilinmiyorsa (null) — veri eksikse eski
+// davranışı bozmamak için kaydı GEÇERLİ sayar (filtrelemez).
+function _kayipKaydiAraligaUyuyorMu(kayit, aralik) {
+  if (!aralik) return true;
+  if (!kayit || !kayit.tarih) return true;
+  const d = new Date(kayit.tarih);
+  if (isNaN(d)) return true;
+  return d >= aralik.min && d <= aralik.max;
+}
+
 // ─── Düzeltilmiş Performansı Hesapla ───
 // Bir inspector için, performansı GERÇEKTEN etkileyen (nötr sayılan) toplam
 // kayıp dakikayı döner — getNotrKayipDakikaForInspector ile aynı liste
 // (Ürün Olmaması, Insp. Lokasyon Değişimi). Diğer sebepler (Diğer, Sistemsel
 // Hata, Elektrik Kesintisi vb.) buraya dahil edilmez, çünkü onlar zaten
 // performansı etkilemeye devam ediyor.
+// NOT: Yalnızca inspector'ın ŞU AN yüklü olan performans döneminin tarih
+// aralığına denk gelen kayıtlar sayılır — önceki dönemlerden kalan kayıp
+// zaman kayıtları bu toplama YANSIMAZ (bkz. _inspectorYukluTarihAraligi).
 function getKayipDakikaForInspector(inspectorName) {
   const nameNorm = String(inspectorName || '').toLowerCase().trim();
+  const aralik = _inspectorYukluTarihAraligi(inspectorName);
   return kayipZamanData
-    .filter(r => String(r.inspector || '').toLowerCase().trim() === nameNorm && NOTR_KAYIP_SEBEPLERI.includes(r.sebep))
+    .filter(r => String(r.inspector || '').toLowerCase().trim() === nameNorm
+      && NOTR_KAYIP_SEBEPLERI.includes(r.sebep)
+      && _kayipKaydiAraligaUyuyorMu(r, aralik))
     .reduce((sum, r) => sum + (r.sureDk || 0), 0);
 }
 
 // ── Değerlendirme Dışı Detay Popup'ı ──────────────────────────────────────
+// NOT: Burada da aynı tarih aralığı filtresi uygulanır — popup'ta sadece
+// yüklü dönemin kayıp zaman kayıtları listelenir (bkz. yukarıdaki not).
 function showKayipDetayPopup(inspectorName) {
   const nameNorm = String(inspectorName || '').toLowerCase().trim();
-  const kayitlar = kayipZamanData.filter(r => String(r.inspector || '').toLowerCase().trim() === nameNorm && NOTR_KAYIP_SEBEPLERI.includes(r.sebep));
+  const aralik = _inspectorYukluTarihAraligi(inspectorName);
+  const kayitlar = kayipZamanData.filter(r => String(r.inspector || '').toLowerCase().trim() === nameNorm
+    && NOTR_KAYIP_SEBEPLERI.includes(r.sebep)
+    && _kayipKaydiAraligaUyuyorMu(r, aralik));
   const toplamDk = kayitlar.reduce((s, r) => s + (r.sureDk || 0), 0);
 
   if (kayitlar.length === 0) return;
+
 
   const satirlar = kayitlar.map(r => {
     const tarih = r.tarih ? new Date(r.tarih).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
