@@ -3569,18 +3569,33 @@ function exportCeyrekArsiviToExcel() {
         .filter(({ ref }) => ref.seviye && ref.seviye.key === kat.key)
         .sort((a, b) => (b.ref.veri?.verimlilik || 0) - (a.ref.veri?.verimlilik || 0));
 
-      const rows = grup.map(({ k, ref }) => ({
-        'Inspector': _formatDisplayName(k.displayName),
-        'Referans Çeyrek': QLABEL[ref.ceyrek],
-        'Verimlilik':    fmtV(ref.veri.verimlilik),
-        'İkinci Insp.':  fmtV(ref.veri.ikinciInsp),
-        'Teknik Skor':   fmtV(ref.veri.teknikSkor)
-      }));
+      // Kullanıcı talebiyle: sadece referans çeyreğin değerleri değil,
+      // inspector'a ait TÜM çeyrekler (Q1-Q4) aynı satırda görünsün —
+      // "Tüm Veriler" sayfasıyla aynı sütun yapısı, sadece bu kategoriyle
+      // filtrelenmiş.
+      const rows = grup.map(({ k, ref }) => {
+        const row = {
+          'Inspector': _formatDisplayName(k.displayName),
+          'Referans Çeyrek': QLABEL[ref.ceyrek]
+        };
+        QC.forEach(q => {
+          const v = k[q];
+          row[`${q} Verimlilik`]   = v ? fmtV(v.verimlilik) : '—';
+          row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
+          row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
+        });
+        return row;
+      });
 
-      const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{ 'Inspector': 'Bu seviyede inspector bulunamadı', 'Referans Çeyrek': '', 'Verimlilik': '', 'İkinci Insp.': '', 'Teknik Skor': '' }]);
-      ws['!cols'] = [{ wch: 24 }, { wch: 18 }, { wch: 13 }, { wch: 13 }, { wch: 13 }];
+      const bosSatir = { 'Inspector': 'Bu seviyede inspector bulunamadı', 'Referans Çeyrek': '' };
+      QC.forEach(q => { bosSatir[`${q} Verimlilik`] = ''; bosSatir[`${q} İkinci Insp.`] = ''; bosSatir[`${q} Teknik Skor`] = ''; });
+
+      const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [bosSatir]);
+      ws['!cols'] = [{ wch: 24 }, { wch: 16 }].concat(
+        QC.flatMap(() => [{ wch: 14 }, { wch: 14 }, { wch: 14 }])
+      );
       const bg = { iyi: 'E3F2FD', orta: 'FFF8E1', acik: 'FFEBEE', zayif: 'FFEBEE' }[kat.key];
-      _ceyrekExcelStyleSheet(ws, 5, rows.length || 1, () => bg);
+      _ceyrekExcelStyleSheet(ws, 2 + QC.length * 3, rows.length || 1, () => bg);
       XLSX.utils.book_append_sheet(wb, ws, kat.ad.length > 31 ? kat.ad.slice(0, 31) : kat.ad);
     });
 
