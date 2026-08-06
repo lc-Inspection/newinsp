@@ -8,7 +8,7 @@
 // HATASIZ olması ve kurulumu (install) hiçbir koşulda BLOKE ETMEMESİ
 // gerekir — aksi halde register() reddedilir ve blob'a düşülür.
 
-const CACHE_NAME = 'ip-v3';
+const CACHE_NAME = 'ip-v4';
 
 self.addEventListener('install', function (e) {
   e.waitUntil(
@@ -37,19 +37,22 @@ self.addEventListener('activate', function (e) {
 self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request).then(function (cached) {
-      var networkFetch = fetch(e.request).then(function (resp) {
-        if (resp && resp.ok && resp.type === 'basic') {
-          var clone = resp.clone();
-          caches.open(CACHE_NAME).then(function (c) { c.put(e.request, clone); });
-        }
-        return resp;
-      }).catch(function () {
-        // Ağ erişilemezse ve önbellekte de yoksa hata fırlat
+    // NETWORK-FIRST: her istekte önce ağdan güncel dosyayı çekmeyi dene.
+    // Başarılı olursa cache'i güncelle ve o güncel yanıtı döndür — böylece
+    // panel.js/panel.css gibi dosyalar her yeniledinizde ANINDA güncel
+    // gelir, "bir sonraki yenilemede geçerli oluyor" gecikmesi yaşanmaz.
+    // Ağ erişilemezse (offline vb.) cache'teki en son bilinen sürüme düş.
+    fetch(e.request).then(function (resp) {
+      if (resp && resp.ok && resp.type === 'basic') {
+        var clone = resp.clone();
+        caches.open(CACHE_NAME).then(function (c) { c.put(e.request, clone); });
+      }
+      return resp;
+    }).catch(function () {
+      return caches.match(e.request).then(function (cached) {
         if (cached) return cached;
         throw new Error('Network error and no cache available');
       });
-      return cached || networkFetch;
     })
   );
 });
