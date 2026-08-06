@@ -666,7 +666,7 @@ let animationEffect = 'slide'; // slide, fade, zoom, flip
 // APP CONFIG (Tüm Ayarlar)
 // ────────────────────────────
 const APP_CONFIG_KEY = 'lc_inspection_config';
-const DEFAULT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzvWud7-lMANAZCBxODIbj1_iv6nMsCkaJ8FxVEppDvxgNK2kxvRl6jPIZQhhlE77Q3/exec'; // ARTIK KULLANILMIYOR (referans için tutuluyor)
+const DEFAULT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbzrARAnKp2iqx4JsrXjnHdiSFpYgJtFPKWbZCPWQsXkgHUfpUlmmIx_d0Zom1gItq0T/exec'; // ARTIK KULLANILMIYOR (referans için tutuluyor)
 
 // ─── cPanel/MySQL Backend API'si — TÜM veri artık buradan geçiyor ───
 // Performans, Klasmanlar, Config, Kullanıcılar, Kayıp Zaman, Teknik İnceleme,
