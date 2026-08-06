@@ -8217,6 +8217,31 @@ function renderEkipAnaliz() {
   `;
 }
 
+// Ekip Yöneticisi kartları için: bireysel kartlarla (getEfektifPerfSeviye)
+// AYNI mantığı ekip bazında uygular — basit "her üyenin %'sini topla/say"
+// yerine, TÜM ekibin (adet - overtime adet) toplamını TÜM ekibin gün sayısı
+// toplamına bölüp "Mesaisiz Günlük Ort." bulur, sonra aynı 450/gün hedefli
+// eşiklerle (400/360/300) İyi/Orta/Gelişime Açık/Zayıf seviyesine çevirir.
+// Bu sayede az gün çalışmış/az veri olan tek bir üyenin yüzdesi, ekip
+// ortalamasını yapay şekilde çarpıtmaz.
+function _ekipEfektifSeviye(teamInspectors) {
+  const t = translations[currentLang] || translations.tr;
+  if (!teamInspectors || !teamInspectors.length) {
+    return { label: '—', color: 'var(--muted)', gunlukOrtNormal: 0 };
+  }
+  const toplamNormalAdet = teamInspectors.reduce((s, i) => s + Math.max(0, (i.adet || 0) - (i.toplamOvertimeAdet || 0)), 0);
+  const toplamGunSayisi  = teamInspectors.reduce((s, i) => s + (i.gunSayisi || 0), 0);
+  const gunlukOrtNormal  = toplamGunSayisi > 0 ? Math.round(toplamNormalAdet / toplamGunSayisi) : 0;
+
+  let label, color;
+  if (gunlukOrtNormal >= 400)      { label = t.perf_good;     color = '#2563eb'; }
+  else if (gunlukOrtNormal >= 360) { label = t.perf_average;  color = '#F57F17'; }
+  else if (gunlukOrtNormal >= 300) { label = t.perf_weak;     color = '#EF5350'; }
+  else                              { label = t.perf_verypoor; color = '#B71C1C'; }
+
+  return { label, color, gunlukOrtNormal };
+}
+
 // Admin görünümünde, her ekip yöneticisi için özet kart oluşturur:
 // kullanıcı adı, çalışan sayısı, toplam kontrol edilen adet ve performans
 // ortalaması. _usersCache'teki "team" alanına sahip (admin olmayan)
@@ -8268,11 +8293,8 @@ async function renderTeamManagersSection() {
     const teamInspectors = getInspectorsForTeam(mgr.team);
     const total = teamInspectors.length;
     const totalAdet = teamInspectors.reduce((s, i) => s + (i.adet || 0), 0);
-    const avgPerf = total > 0
-      ? Math.round(teamInspectors.reduce((s, i) => s + (i.performans || 0), 0) / total)
-      : 0;
-
-    const perfColor = getProgressColor(avgPerf);
+    const _seviye = _ekipEfektifSeviye(teamInspectors);
+    const perfColor = _seviye.color;
 
     return `
       <div class="card team-manager-card" style="margin-bottom:0;overflow:hidden">
@@ -8293,8 +8315,8 @@ async function renderTeamManagersSection() {
                 <div style="font-size:18px;font-weight:700;color:var(--amber);font-family:'DM Mono',monospace;line-height:1">${formatTR(totalAdet)}</div>
                 <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-top:4px">${t.team_manager_total_qty}</div>
               </div>
-              <div style="text-align:center;padding:8px 4px;border-radius:8px;background:var(--lgreen);border:1px solid #B2DFDB">
-                <div style="font-size:18px;font-weight:700;color:${perfColor};font-family:'DM Mono',monospace;line-height:1">${avgPerf}%</div>
+              <div style="text-align:center;padding:8px 4px;border-radius:8px;background:var(--lgreen);border:1px solid #B2DFDB" title="${_seviye.gunlukOrtNormal} adet/gün (mesaisiz ort.)">
+                <div style="font-size:16px;font-weight:700;color:${perfColor};font-family:'DM Sans',sans-serif;line-height:1.15">${_seviye.label}</div>
                 <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-top:4px">${t.team_manager_avg_perf}</div>
               </div>
             </div>
@@ -8336,9 +8358,7 @@ function renderTeamSection() {
   const teamInspectors = getTeamInspectors();
   const total = teamInspectors.length;
 
-  const avgPerf = total > 0
-    ? Math.round(teamInspectors.reduce((s, i) => s + (i.performans || 0), 0) / total)
-    : 0;
+  const _seviye = _ekipEfektifSeviye(teamInspectors);
   const totalProducts = teamInspectors.reduce((s, i) => s + (i.adet || 0), 0);
   const avgDays = total > 0
     ? Math.round(teamInspectors.reduce((s, i) => s + (i.gunSayisi || 0), 0) / total)
@@ -8349,7 +8369,13 @@ function renderTeamSection() {
   const elProducts = document.getElementById('team-total-products');
   const elAvgDays  = document.getElementById('team-avg-days');
   if (elMembers)  elMembers.textContent  = total;
-  if (elAvgPerf)  elAvgPerf.textContent  = avgPerf + '%';
+  if (elAvgPerf)  {
+    elAvgPerf.textContent = _seviye.label;
+    elAvgPerf.title = _seviye.gunlukOrtNormal + ' adet/gün (mesaisiz ort.)';
+    elAvgPerf.style.color = _seviye.color;
+    elAvgPerf.style.fontFamily = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    elAvgPerf.style.fontSize = '19px';
+  }
   if (elProducts) elProducts.textContent = formatTR(totalProducts);
   if (elAvgDays)  elAvgDays.textContent  = avgDays + ' ' + t.days_suffix;
 
@@ -8362,11 +8388,14 @@ function renderTeamSection() {
     return;
   }
 
+  // Sıralama ve rozet artık her üye için bireysel karttakiyle (dashboard)
+  // BİREBİR aynı adet-bazlı seviyeyi (getEfektifPerfSeviye) kullanıyor —
+  // basit hedef-normalize % yerine.
   listEl.innerHTML = teamInspectors
-    .sort((a, b) => (b.performans || 0) - (a.performans || 0))
-    .map(i => {
-      const perf  = i.performans || 0;
-      const color = getProgressColor(perf);
+    .map(i => ({ i, seviye: getEfektifPerfSeviye(i, i.genelHizPerf || 0) }))
+    .sort((a, b) => b.seviye.adetBazliPerf - a.seviye.adetBazliPerf)
+    .map(({ i, seviye }) => {
+      const color = ({'perf-good':'#2563eb','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'})[seviye.cls] || 'var(--muted)';
       const ini   = (i.ins || '').split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
       const safeName = _escapeHtml(i.ins);
       const jsName   = safeName.replace(/'/g, "\\'");
@@ -8375,7 +8404,7 @@ function renderTeamSection() {
           <div class="avatar">${ini}</div>
           <div style="flex:1;min-width:0;cursor:pointer" onclick="showInspectorDetail('${jsName}')">
             <div class="tm-name">${safeName}</div>
-            <div class="tm-perf" style="color:${color}">${perf}%</div>
+            <div class="tm-perf" style="color:${color}" title="${seviye.adetBazliPerf}%">${seviye.label}</div>
           </div>
           <button class="tm-remove" title="${t.remove_from_team}" onclick="removeFromTeam('${jsName}')">✕</button>
         </div>`;
@@ -8456,12 +8485,9 @@ async function toggleDigerEkipler(e) {
 
   liste.innerHTML = managers.map(mgr => {
     const members = getInspectorsForTeam(mgr.team);
-    const avgPerf = members.length
-      ? Math.round(members.reduce((s, i) => s + (i.performans || 0), 0) / members.length)
-      : null;
-    const perfColor = avgPerf === null ? 'var(--muted)' : getProgressColor(avgPerf);
-    const perfStr = avgPerf !== null
-      ? `<span style="font-weight:700;color:${perfColor};font-family:'DM Mono',monospace">${avgPerf}%</span>`
+    const _seviyeD = _ekipEfektifSeviye(members);
+    const perfStr = members.length
+      ? `<span style="font-weight:700;color:${_seviyeD.color};font-family:'Inter',sans-serif;font-size:12px" title="${_seviyeD.gunlukOrtNormal} adet/gün">${_seviyeD.label}</span>`
       : `<span style="color:var(--muted);font-size:11px">—</span>`;
     return `
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border2)">
