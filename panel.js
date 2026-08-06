@@ -10603,9 +10603,31 @@ function loadTeknikKriterFromLocalStorage() {
 // tik'lerse o kriterin tam puanını kazanır, tik'lemezse 0 alır. Skor = tüm
 // kayıtlardaki kazanılan puan toplamı / max puan toplamı * 100. Seviye etiketi
 // mevcut 5 seviyeli skala (getPerformanceLevelLabel) ile birebir aynı eşikleri kullanır.
+// Bir tarihi "Çeyrek Performans Arşivi"nde kullanılan SABİT dönemlerden
+// (Q1 Şub-Mar-Nis · Q2 May-Haz-Tem · Q3 Ağu-Eyl-Eki · Q4 Kas-Ara-Oca) hangisine
+// ait olduğunu, yılıyla birlikte benzersiz bir anahtara çevirir. Q4, yıl
+// sınırını aştığı için (Kasım-Aralık + bir sonraki Ocak) — Ocak ayı, bir
+// önceki yılın Kas-Ara'sıyla AYNI çeyrek kabul edilir (örn. Ocak 2027,
+// Kasım-Aralık 2026 ile birlikte "Q4-2026").
+function _tarihCeyrekAnahtari(d) {
+  if (!d) return null;
+  const dt = d instanceof Date ? d : new Date(d);
+  if (isNaN(dt.getTime())) return null;
+  const month = dt.getMonth() + 1;
+  let year = dt.getFullYear();
+  if (month === 1) year -= 1;
+  return _ayToQuarter(month) + '-' + year;
+}
+
+// NOT: Kayıp zamandan FARKLI olarak burada "yüklü Excel'in tarih aralığı"
+// değil, panelin SABİT Q1-Q4 çeyrek sistemi referans alınır — kart her
+// zaman İÇİNDE BULUNULAN ÇEYREĞİN teknik inceleme skorunu gösterir. Önceki
+// bir çeyrekte girilmiş puanlar, farklı bir çeyrekteyken skora YANSIMAZ.
 function getTeknikIncelemeSkorForInspector(inspectorName) {
   const nameNorm = String(inspectorName || '').toLowerCase().trim();
-  const cevaplar = teknikSkorlar.filter(r => String(r.inspector || '').toLowerCase().trim() === nameNorm);
+  const suankiCeyrekAnahtari = _tarihCeyrekAnahtari(new Date());
+  const cevaplar = teknikSkorlar.filter(r => String(r.inspector || '').toLowerCase().trim() === nameNorm
+    && _tarihCeyrekAnahtari(r.tarih) === suankiCeyrekAnahtari);
   if (!cevaplar.length) return { percent: 0, count: 0, seviye: '—' };
   let maxToplam = 0, kazanilanToplam = 0;
   cevaplar.forEach(r => {
