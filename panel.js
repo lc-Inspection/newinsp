@@ -96,8 +96,6 @@ const translations = {
     nav_analysis:         'Analiz',
     nav_klasman_analysis: 'Klasman Analizi',
     nav_perf_analysis:    'Performans Analizi',
-    nav_display:          'Görüntüleme',
-    nav_live:             'Canlı Gösterim',
 
     // Dashboard page
     dash_title:           'Inspector Performans Dashboard',
@@ -169,8 +167,6 @@ const translations = {
     sampling_desc:        '<span data-i18n="sampling_off">Kapalı: gerçek adet kullanılır.</span> <strong data-i18n="one_below">Bir Alttan</strong> / <strong data-i18n="two_below">İki Alttan</strong>: <span data-i18n="sampling_desc_end">adet örnekleme tablosuna göre dönüştürülür.</span>',
     target_below_100:     'hedef → performans',
     target_above_100:     'hedef → performans',
-    start_slideshow:      'Gösterimi Başlat',
-    stop_slideshow:       '⏸ Durdur',
     no_perf_alert:        'Henüz performans verisi yok! Önce Performans Analizi sayfasından veri yükleyin.',
     records_summary:      'kayıt · ',
     units_summary:        'adet · ',
@@ -649,20 +645,6 @@ let currentDashboardPage = 1;
 let selectedInspectorDetail = null;
 
 // ────────────────────────────
-// SLIDESHOW DEĞİŞKENLERİ
-// ────────────────────────────
-let slideshowActive = false;
-let slideshowInspectors = [];
-let currentSlideIndex = 0;
-let slideshowInterval = null;
-let progressInterval = null;
-
-// Slideshow Ayarları
-let slideDuration = 5000; // 5 saniye
-let displayMode = 'all'; // all, top5, excellent, good
-let animationEffect = 'slide'; // slide, fade, zoom, flip
-
-// ────────────────────────────
 // APP CONFIG (Tüm Ayarlar)
 // ────────────────────────────
 const APP_CONFIG_KEY = 'lc_inspection_config';
@@ -728,7 +710,6 @@ const ASSIGNABLE_TABS = [
   { id: 'dashboard',        label: 'Dashboard' },
   { id: 'performans',       label: 'Performans Analizi' },
   { id: 'ceyrek-performans',label: 'Çeyrek Performans' },
-  { id: 'canli',            label: 'Canlı Gösterim' },
   { id: 'teknik-inceleme',  label: 'Teknik İnceleme' }
 ];
 
@@ -938,7 +919,6 @@ async function autoFetchOnStartup() {
   updateSidebar();
   renderDashboard(); renderQuarterBadge(performansData);
   renderPerfTabloFromData();
-  renderTopInspectors();
   showStartupBanner(`✅ Sheets senkronizasyonu tamamlandı (${klasmanlar.length} klasman, ${performansData.length} inspector)`, 'success');
   console.log('✅ Otomatik yükleme tamamlandı');
 }
@@ -1810,7 +1790,6 @@ async function pullPerformansFromSheets(silent = false) {
       saveData();
       renderDashboard(); renderQuarterBadge(performansData);
       updateSidebar();
-      renderTopInspectors();
       if (!silent) showSuccessMessage(`✅ ${performansData.length} ` + (translations[currentLang]||translations.tr).sheets_loaded_perf);
       else showStartupBanner(`✅ ${performansData.length} inspector verisi güncellendi`, 'success');
       console.log('✅ Performans verisi Sheets\u2019ten çekildi:', performansData.length, 'inspector');
@@ -2099,7 +2078,6 @@ async function pullPerformansFromSheetsManual(ev) {
       saveData();
       renderDashboard();
       updateSidebar();
-      renderTopInspectors();
       // Analiz tablosunu yeniden çiz
       if (typeof renderPerformansTable === 'function') renderPerformansTable();
       showSuccessMessage(`✅ ${count} ` + (translations[currentLang]||translations.tr).sheets_loaded_to_perf);
@@ -2266,7 +2244,7 @@ function showPerformansHowItWorks() {
               <ul style="font-size:11px;color:var(--muted);line-height:1.9;padding-left:16px;margin:0">
                 <li>Sheets'teki ham JSON verisi çekilir</li>
                 <li>Onay sonrası mevcut verilerin üzerine yazar</li>
-                <li>Dashboard ve Canlı Gösterim güncellenir</li>
+                <li>Dashboard güncellenir</li>
                 <li>Son kayıt tarihi gösterilir</li>
               </ul>
             </div>
@@ -2474,53 +2452,19 @@ async function clearDashboardData() {
   window._uploadAborted = true;
 
   // ── Tüm devam eden işlemleri durdur ──────────────────────────────────────
-  
-  // 1) Slideshow durdur
-  if (slideshowActive) {
-    slideshowActive = false;
-    if (slideshowInterval) { clearInterval(slideshowInterval); slideshowInterval = null; }
-    if (progressInterval)  { clearInterval(progressInterval);  progressInterval  = null; }
-    document.getElementById('slideshow-container').classList.remove('running');
-    document.getElementById('slideshow-btn').innerHTML =
-      '<svg width=14 height=14 viewBox="0 0 24 24" fill="currentColor" style="margin-right:4px"><polygon points="5,3 19,12 5,21"/></svg> '
-      + (translations[currentLang]||translations.tr).start_slideshow;
-    const canliCtrl = document.getElementById('canli-controls');
-    if (canliCtrl) canliCtrl.style.display = 'block';
-    showWelcomeScreen();
-  }
 
-  // 2) HD Video kaydı durdur
-  if (_vidRendering) {
-    _vidRendering = false;
-    _stopFillLoop();
-    clearTimeout(_vidSlideTimer);
-    if (_vidRecorder && _vidRecorder.state !== 'inactive') _vidRecorder.stop();
-    if (_vidStream) { _vidStream.getTracks().forEach(t => t.stop()); _vidStream = null; }
-    _hideRecordingIndicator();
-    const vidBtn = document.getElementById('video-rec-btn');
-    if (vidBtn) {
-      vidBtn.innerHTML  = '🎥 Video Oluştur';
-      vidBtn.className  = 'btn btn-success';
-      vidBtn.disabled   = false;
-      vidBtn.onclick    = startVideoRecording;
-    }
-  }
-
-  // 3) Countdown ring durdur
-  _stopCountdownRing();
-
-  // 4) Klasman auto-push timer iptal et
+  // 1) Klasman auto-push timer iptal et
   clearTimeout(_klasmanPushTimer);
   clearTimeout(window._configPushTimer);
 
-  // 5) Başlangıç banner'ı gizle
+  // 2) Başlangıç banner'ı gizle
   hideStartupBanner();
 
-  // 6) Analiz overlay açıksa kapat
+  // 3) Analiz overlay açıksa kapat
   const aoOv = document.getElementById('analiz-overlay');
   if (aoOv && aoOv.style.display !== 'none') closeAnalizOverlay();
 
-  // 7) Tüm açık modalları kapat
+  // 4) Tüm açık modalları kapat
   closeModal();
   closeDetailModal();
   const kpwOv = document.getElementById('klasman-pw-overlay');
@@ -2539,15 +2483,12 @@ async function clearDashboardData() {
   excelCols              = [];
   currentDashboardPage   = 1;
   filteredInspectors     = [];
-  slideshowInspectors    = [];
-  currentSlideIndex      = 0;
   selectedInspectorDetail = null;
 
   saveData();
   renderDashboard();
   renderPerfTabloFromData();
   updateSidebar();
-  renderTopInspectors();
 
   // ── Sheets temizle ────────────────────────────────────────────────────────
   if (!SHEETS_DEVRE_DISI && url && token) {
@@ -2915,8 +2856,6 @@ function showPage(id, navEl){
     // ZORLA tazelenir, önceki oturumdan kalma eski atama kullanılmaz.
     // Filtre dropdown'ı VE tablo, taze veri gelene kadar bekletilir.
     populateCeyrekEkipFiltre().then(() => renderCeyrekPerformansTablosu(true));
-  } else if(id === 'canli') {
-    initCanliPage();
   } else if(id === 'performans') {
     renderPerfTabloFromData();
     autoFetchPerfIfNeeded();
@@ -6543,719 +6482,11 @@ function performansHesapla(){
   showFileStatus(`✅ ${liste.length}` + (translations[currentLang]||translations.tr).analysis_done + otoKlasmanNotu, 'var(--green)');
 }
 
-// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-// CANLI GÖSTERİM FONKSİYONLARI
-// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 // ────────────────────────────
-// CANLI GÖSTERİM SAYFA İNİT
-// ────────────────────────────
-function initCanliPage() {
-  console.log('🎬 Canlı sayfa başlatılıyor...');
-  showWelcomeScreen();
-  updateSlideWelcomeStats();
-  renderTopInspectors();
-  console.log('✅ Canlı sayfa hazır');
-}
-
-function updateSlideWelcomeStats() {
-  const totalInspectors = performansData.length;
-  const avgPerformance = totalInspectors > 0 
-    ? Math.round(performansData.reduce((sum, i) => sum + getDispPerf(i), 0) / totalInspectors)
-    : 0;
-  
-  document.getElementById('welcome-total').textContent = totalInspectors;
-  document.getElementById('welcome-avg').textContent = avgPerformance + '%';
-}
-
-// ────────────────────────────
-// SLIDESHOW KONTROLÜ
-// ────────────────────────────
-function toggleSlideshow() {
-  if (slideshowActive) {
-    stopSlideshow();
-  } else {
-    startSlideshow();
-  }
-}
-
-function startSlideshow() {
-  if (!performansData.length) {
-    alert((translations[currentLang]||translations.tr).no_perf_alert);
-    return;
-  }
-  
-  slideshowActive = true;
-  currentSlideIndex = 0;
-  
-  // Kontrol panelini gizle
-  document.getElementById('canli-controls').style.display = 'none';
-  
-  // Buton metnini değiştir
-  document.getElementById('slideshow-btn').innerHTML = (translations[currentLang]||translations.tr).stop_slideshow;
-  
-  // Inspector listesini hazırla
-  prepareSlideshow();
-  
-  // İlk slaydı göster
-  showSlide(0);
-  
-  // Otomatik geçişi başlat
-  startAutoSlide();
-  
-  // Header bilgilerini güncelle
-  updateSlideHeader();
-
-  // Görsel geliştirmeler
-  document.getElementById('slideshow-container').classList.add('running');
-  _initParticles();
-  _startCountdownRing();
-  
-  console.log('🎬 Slideshow başlatıldı:', slideshowInspectors.length, 'inspector');
-}
-
-function stopSlideshow() {
-  slideshowActive = false;
-  
-  // Intervalları temizle
-  if (slideshowInterval) {
-    clearInterval(slideshowInterval);
-    slideshowInterval = null;
-  }
-  if (progressInterval) {
-    clearInterval(progressInterval);
-    progressInterval = null;
-  }
-  
-  // Kontrol panelini göster
-  document.getElementById('canli-controls').style.display = 'block';
-  
-  // Buton metnini değiştir
-  document.getElementById('slideshow-btn').innerHTML = '<svg width=14 height=14 viewBox="0 0 24 24" fill="currentColor" style="margin-right:4px"><polygon points="5,3 19,12 5,21"/></svg> ' + (translations[currentLang]||translations.tr).start_slideshow;
-  
-  // Welcome ekranını göster
-  showWelcomeScreen();
-
-  // Görsel geliştirmeler kaldır
-  document.getElementById('slideshow-container').classList.remove('running');
-  _stopCountdownRing();
-  
-  console.log('⏸️ Slideshow durduruldu');
-}
-
-function resetSlideshow() {
-  stopSlideshow();
-  currentSlideIndex = 0;
-  showWelcomeScreen();
-}
-
-// ────────────────────────────
-// SLIDESHOW HAZIRLIK
-// ────────────────────────────
-function prepareSlideshow() {
-  console.log('🎬 Slideshow hazırlanıyor...', performansData.length, 'inspector mevcut');
-  
-  let inspectors = [...performansData];
-  
-  // Görüntüleme moduna göre filtrele — Düz. Performans (getDispPerf) bazında
-  switch(displayMode) {
-    case 'top5':
-      inspectors = inspectors
-        .sort((a, b) => getDispPerf(b) - getDispPerf(a))
-        .slice(0, 10);
-      break;
-    case 'excellent':
-      inspectors = inspectors.filter(i => getDispPerf(i) >= 95);
-      break;
-    case 'good':
-      inspectors = inspectors.filter(i => getDispPerf(i) >= 85);
-      break;
-    default: // 'all'
-      inspectors = inspectors.sort((a, b) => getDispPerf(b) - getDispPerf(a));
-  }
-  
-  slideshowInspectors = inspectors;
-  console.log('📊 Slideshow için hazırlanan inspector sayısı:', slideshowInspectors.length);
-  
-  // Sol paneli güncelle
-  renderTopInspectors();
-  
-  // Duyuruları güncelle
-  updateAnnouncements();
-}
-
-function updateAnnouncements() {
-  const announcements = [];
-  
-  if (slideshowInspectors.length > 0) {
-    const best = slideshowInspectors[0];
-    const bestPerf = Math.round(getDispPerf(best));
-    
-    if (bestPerf >= 95) {
-      announcements.push(`🏆 ${(translations[currentLang]||translations.tr).best_inspector_month}: ${best.ins} (${bestPerf}%)`);
-    }
-    
-    const excellentCount = slideshowInspectors.filter(i => getDispPerf(i) >= 95).length;
-    if (excellentCount > 0) {
-      announcements.push(`⭐ ${excellentCount} Inspector mükemmel performans gösteriyor!`);
-    }
-    
-    const avgPerf = Math.round(slideshowInspectors.reduce((sum, i) => sum + getDispPerf(i), 0) / slideshowInspectors.length);
-    announcements.push(`📊 ${(translations[currentLang]||translations.tr).stat_avg_perf_plain}: ${avgPerf}% | ${(translations[currentLang]||translations.tr).stat_total_inspector}: ${slideshowInspectors.length}`);
-  }
-  
-  // Duyuru metnini döngüsel olarak değiştir
-  let announcementIndex = 0;
-  const announcementElement = document.getElementById('announcement-text');
-  
-  function cycleAnnouncements() {
-    if (announcements.length > 0) {
-      announcementElement.textContent = announcements[announcementIndex];
-      announcementIndex = (announcementIndex + 1) % announcements.length;
-    }
-  }
-  
-  cycleAnnouncements();
-  setInterval(cycleAnnouncements, 4000);
-}
-
-// ────────────────────────────
-// AYIN EN İYİ İNSPECTÖRLERİ (5 KİŞİ)
-// ────────────────────────────
-function renderTopInspectors() {
-  const listContainer = document.getElementById('top-inspectors-list');
-  
-  if (!performansData || !performansData.length) {
-    listContainer.innerHTML = `
-      <div style="text-align:center;padding:32px 22px;color:rgba(255,255,255,.3);">
-        <div style="font-size:28px;margin-bottom:10px;opacity:.5">📊</div>
-        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Veri Yok</div>
-        <div style="font-size:10px;margin-top:6px;color:rgba(255,255,255,.2);">Excel yükleyip analiz yapın</div>
-      </div>
-    `;
-    return;
-  }
-
-  const topInspectors = [...performansData]
-    .filter(i => {
-      const perf = getDispPerf(i);
-      return perf !== null && perf !== undefined && !isNaN(perf) && perf > 0;
-    })
-    .sort((a, b) => {
-      // Az veri (10 günden az) olan inspector'lar performansı ne kadar
-      // yüksek olursa olsun, yeterli veriye sahip olanların ÖNÜNE geçemez.
-      const aAz = azVeriMi(a.gunSayisi), bAz = azVeriMi(b.gunSayisi);
-      if (aAz !== bAz) return aAz ? 1 : -1;
-      return getDispPerf(b) - getDispPerf(a);
-    })
-    .slice(0, 10);
-
-  if (!topInspectors.length) {
-    listContainer.innerHTML = `
-      <div style="text-align:center;padding:32px 22px;color:rgba(255,255,255,.3);">
-        <div style="font-size:28px;margin-bottom:10px;opacity:.5">⚠️</div>
-        <div style="font-size:11px;font-weight:600;">Performans verisi yok</div>
-      </div>
-    `;
-    return;
-  }
-
-  const listHtml = topInspectors.map((inspector, index) => {
-    const rank = index + 1;
-    const performans = Math.round(getDispPerf(inspector));
-    const performansClass = getPerformanceClass(performans);
-    const rankCardClass = rank === 1 ? 'rank-1-card' : rank === 2 ? 'rank-2-card' : rank === 3 ? 'rank-3-card' : '';
-    const rankClass = rank === 1 ? 'rank-1' : rank === 2 ? 'rank-2' : rank === 3 ? 'rank-3' : 'rank-other';
-    const rankIcon = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
-    const t = (translations[currentLang] || translations.tr);
-
-    const perfColor = performans >= 85 ? '#64B5F6'
-      : performans >= 70 ? '#FFB74D'
-      : performans >= 50 ? '#EF9A9A'
-      : '#FF8A80';
-
-    const performanceLevel = (() => {
-      if (performans >= 85) return { text: 'İYİ', cls: 'badge-good' };
-      if (performans >= 70) return { text: 'ORTA', cls: 'badge-average' };
-      if (performans >= 50) return { text: 'GELİŞİME AÇIK', cls: 'badge-weak' };
-      return { text: 'ZAYIF', cls: 'badge-verypoor' };
-    })();
-
-    return `
-      <div class="top-inspector-card ${rankCardClass}" onclick="jumpToInspector('${inspector.ins.replace(/'/g, "\\'")}')">
-        <div class="top-inspector-info" style="display:flex;align-items:center;gap:10px">
-          <div class="top-inspector-rank ${rankClass}" style="flex-shrink:0">${rank <= 3 ? rankIcon : rank}</div>
-          <div class="top-inspector-info-text" style="flex:1;min-width:0">
-            <div class="top-inspector-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${inspector.ins}</div>
-            <div class="top-inspector-details">
-              ${formatTR((inspector.adet || 0))} ${t.units_short} · ${inspector.gunSayisi || 0} ${t.working}
-            </div>
-            <span class="top-inspector-badge ${performanceLevel.cls}" style="margin-top:4px;display:inline-block">${performanceLevel.text}</span>
-            ${azVeriMi(inspector.gunSayisi) ? azVeriRozetiHtml('badge') : ''}
-          </div>
-          <div class="top-inspector-performance ${performansClass}" style="color:${perfColor};flex-shrink:0">${performans}%</div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  listContainer.innerHTML = listHtml;
-}
-
-// ────────────────────────────
-// INSPECTOR'A ATLAMA
-// ────────────────────────────
-function jumpToInspector(inspectorName) {
-  if (!slideshowActive || !slideshowInspectors.length) return;
-  
-  const targetIndex = slideshowInspectors.findIndex(i => i.ins === inspectorName);
-  if (targetIndex !== -1) {
-    currentSlideIndex = targetIndex;
-    showSlide(currentSlideIndex);
-    
-    // Progress bar'ı sıfırla
-    if (progressInterval) {
-      clearInterval(progressInterval);
-    }
-    document.getElementById('progress-bar').style.width = '0%';
-    
-    // Otomatik geçişi yeniden başlat
-    if (slideshowActive) {
-      startAutoSlide();
-    }
-  }
-}
-
-// ────────────────────────────
-// SLIDE GÖSTERME
-// ────────────────────────────
-function showSlide(index) {
-  const mainArea = document.getElementById('slideshow-main');
-  
-  if (index >= slideshowInspectors.length) {
-    currentSlideIndex = 0;
-    index = 0;
-  }
-  
-  const inspector = slideshowInspectors[index];
-  const t = translations[currentLang] || translations.tr;
-  // Düz. Performans (verimlilikPerf) varsa onu kullan, yoksa genelHizPerf
-  const performans = Math.round(getDispPerf(inspector));
-  const hamPerf = Math.round(inspector.genelHizPerf ?? 0);
-  const performansClass = getPerformanceClass(performans);
-  
-  // Seviye etiketi artık panelin her yerinde (Dashboard/Ekibim/Ekip
-  // Yöneticileri) kullanılan TEK doğru kaynaktan geliyor — getEfektifPerfSeviye
-  // (Mesaisiz Günlük Ort. ÷ 450/gün hedef). Eskiden burada ayrı bir %
-  // eşiği (getPerformanceLevelLabel) kullanılıyordu ve aynı kişi için
-  // farklı bir seviye gösterebiliyordu.
-  const _efektifSlide = getEfektifPerfSeviye(inspector, inspector.genelHizPerf || 0);
-  const performansLevel = _efektifSlide.label;
-  
-  const ini = inspector.ins.split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
-  
-  // SVG circle hesaplaması — container 150×150px → merkez (75,75), r=65
-  const radius = 65;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDasharray = circumference;
-  const strokeDashoffset = circumference - (Math.min(performans, 150) / 150) * circumference;
-
-  // Klasman breakdown satırları (büyük kart formatı, en fazla 3)
-  const klasmanEntries = Object.entries(inspector.klasmanlar || {})
-    .sort((a, b) => (b[1].adet || 0) - (a[1].adet || 0))
-    .slice(0, 3);
-
-  const klasmanRows = klasmanEntries.length ? klasmanEntries.map(([kName, kData]) => {
-    const kPerf = Math.round(kData.hizPerf || 0);
-    const kColor = getProgressColor(kPerf);
-    const barW = Math.min(100, kPerf);
-    return `<div class="slide-klasman-card">
-      <div class="slide-klasman-card-top">
-        <span class="slide-klasman-card-name">${kName}</span>
-        <span class="slide-klasman-card-perf" style="color:${kColor}">${kPerf}%</span>
-      </div>
-      <div class="slide-klasman-bar"><div class="slide-klasman-bar-fill" style="width:${barW}%;background:${kColor}"></div></div>
-      <div class="slide-klasman-card-adet">${formatTR((kData.adet || 0))} ${t.units_short}</div>
-    </div>`;
-  }).join('') : `<div style="font-size:12px;color:rgba(255,255,255,.4);text-align:center;padding:16px">${t.no_data_live}</div>`;
-
-  // Overtime hesapları
-  const otMesaiSn   = inspector.overtimeMesaiSure || 0;
-  const otPerf       = inspector.overtimePerformans;
-  const hasOvertime  = otMesaiSn > 0;
-  // Overtime'da kontrol edilen GERÇEK adet (tahmin değil — Excel'den satır
-  // satır izlenip biriktiriliyor, bkz. inspectorMap[ins].toplamOvertimeAdet)
-  const otAdetGercek = hasOvertime ? (inspector.toplamOvertimeAdet || 0) : null;
-  const otColor = otPerf === null || otPerf === undefined ? 'rgba(255,255,255,.4)'
-    : getProgressColor(otPerf);
-
-  const overtimeBlockHtml = hasOvertime ? `
-    <div class="slide-overtime-block">
-      <div class="slide-overtime-header">🌙 <span>Overtime</span></div>
-      <div class="slide-overtime-stats">
-        <div class="slide-overtime-stat">
-          <div class="slide-overtime-stat-value">${Math.round(otMesaiSn/60)}<span class="slide-overtime-unit">dk</span></div>
-          <div class="slide-overtime-stat-label">Ek Mesai</div>
-        </div>
-        <div class="slide-overtime-stat">
-          <div class="slide-overtime-stat-value" style="color:${otColor}">${otPerf !== null && otPerf !== undefined ? otPerf+'%' : '—'}</div>
-          <div class="slide-overtime-stat-label">Verimlilik</div>
-        </div>
-        <div class="slide-overtime-stat">
-          <div class="slide-overtime-stat-value">${otAdetGercek !== null ? formatTR(otAdetGercek) : '—'}</div>
-          <div class="slide-overtime-stat-label">Kontrol Edilen</div>
-        </div>
-      </div>
-    </div>` : `
-    <div class="slide-overtime-block slide-overtime-empty">
-      <div class="slide-overtime-header">🌙 <span>Overtime</span></div>
-      <div class="slide-overtime-none">Bu dönemde overtime çalışması yok</div>
-    </div>`;
-
-  const slideHtml = `
-    <div class="inspector-slide active ${performansClass} anim-${animationEffect}">
-      <div class="inspector-slide-header">
-        <div class="inspector-slide-title">${t.detailed_perf}</div>
-        <div class="inspector-slide-subtitle">${new Date().toLocaleDateString('tr-TR', { 
-          weekday: 'long', 
-          year: 'numeric', 
-          month: 'long', 
-          day: 'numeric' 
-        })}</div>
-      </div>
-      
-      <div class="inspector-slide-main">
-        <!-- Sol: Avatar, İsim, Klasman kartları -->
-        <div class="inspector-slide-avatar">
-          <div class="inspector-slide-avatar-circle">
-            ${ini}
-          </div>
-          <div class="inspector-slide-name">${inspector.ins}</div>
-          <div style="font-size: 12px; color: rgba(255,255,255,0.6); margin-bottom:14px;">
-            📅 ${inspector.gunSayisi || 0} ${t.working}
-          </div>
-          <!-- Klasman Kartları (büyük format) -->
-          <div class="slide-klasman-cards">${klasmanRows}</div>
-        </div>
-        
-        <!-- Orta: İstatistikler + Overtime bloğu -->
-        <div class="inspector-slide-center">
-          <div class="inspector-slide-info">
-            <div class="inspector-slide-stat">
-              <div class="inspector-slide-stat-value">${formatTR((inspector.adet || 0))}</div>
-              <div class="inspector-slide-stat-label">${t.total_product}</div>
-            </div>
-            <div class="inspector-slide-stat">
-              <div class="inspector-slide-stat-value">${formatTR((inspector.kayit || 0))}</div>
-              <div class="inspector-slide-stat-label">${t.record_count}</div>
-            </div>
-            <div class="inspector-slide-stat">
-              <div class="inspector-slide-stat-value">${fmtSnKisa(inspector.mesaiSure||0)}</div>
-              <div class="inspector-slide-stat-label">${t.std_duration}</div>
-            </div>
-            <div class="inspector-slide-stat">
-              <div class="inspector-slide-stat-value">${Object.keys(inspector.klasmanlar || {}).length}</div>
-              <div class="inspector-slide-stat-label">${t.klasman_count}</div>
-            </div>
-          </div>
-          ${overtimeBlockHtml}
-        </div>
-        
-        <!-- Sağ: Performans -->
-        <div class="inspector-slide-performance">
-          <div class="performance-circle">
-            <svg viewBox="0 0 150 150">
-              <circle
-                class="performance-circle-bg"
-                cx="75"
-                cy="75"
-                r="${radius}"
-              />
-              <circle
-                class="performance-circle-progress"
-                id="perf-circle-progress"
-                cx="75"
-                cy="75"
-                r="${radius}"
-                stroke-dasharray="${strokeDasharray}"
-                stroke-dashoffset="${circumference}"
-              />
-            </svg>
-            <div class="performance-circle-text">
-              <div class="performance-circle-value performance-circle-value--label" id="perf-circle-value" title="${performans}%">${performansLevel}</div>
-              <div class="performance-circle-label">${inspector.verimlilikPerf !== null && inspector.verimlilikPerf !== undefined ? t.adj_perf_label_upper : t.avg_perf_plain}</div>
-            </div>
-          </div>
-          <div class="performance-level">${performansLevel}</div>
-          ${inspector.verimlilikPerf !== null && inspector.verimlilikPerf !== undefined && hamPerf !== performans
-            ? `<div style="margin-top:10px;font-size:12px;color:rgba(255,255,255,.5)">${t.raw_avg} <strong style="color:rgba(255,255,255,.75)">${hamPerf}%</strong></div>`
-            : ''}
-        </div>
-      </div>
-    </div>
-  `;
-  
-  mainArea.innerHTML = slideHtml;
-
-  // Performans yüzdesi + çemberi senkronize sayaç animasyonuyla doldur
-  animatePerformanceCircle(performans, circumference);
-
-  // Countdown ring'i sıfırla
-  if (slideshowActive) _resetCountdownRing();
-  
-  // Footer bilgilerini güncelle
-  updateSlideFooter(index);
-}
-
-// Performans çemberini (SVG halkası, stroke-dashoffset) animasyonlu olarak
-// 0'dan hedef değere doldurur. Dairenin İÇİNDEKİ metin artık % yerine sabit
-// bir performans seviyesi adı (İyi/Orta/Gelişime Açık/Zayıf) gösterdiği için
-// o metin ayrıca sayı sayarak animasyonlu YAZILMAZ — sadece halka dolar.
-function animatePerformanceCircle(targetPercent, circumference) {
-  const circleEl = document.getElementById('perf-circle-progress');
-  if (!circleEl) return;
-
-  const duration = 1200; // ms - eski CSS transition süresiyle aynı
-  const startTime = performance.now();
-  // ease-out cubic (CSS cubic-bezier(.4,0,.2,1)'e yakın bir JS karşılığı)
-  const easeOutCubic = x => 1 - Math.pow(1 - x, 3);
-
-  function frame(now) {
-    const elapsed = now - startTime;
-    const rawProgress = Math.min(elapsed / duration, 1);
-    const eased = easeOutCubic(rawProgress);
-
-    const currentOffset = circumference - (Math.min(eased * targetPercent, 150) / 150) * circumference;
-    circleEl.style.strokeDashoffset = currentOffset;
-
-    if (rawProgress < 1) {
-      requestAnimationFrame(frame);
-    } else {
-      // Son karede tam hedef değere kilitle (yuvarlama hatalarını önler)
-      const finalOffset = circumference - (Math.min(targetPercent, 150) / 150) * circumference;
-      circleEl.style.strokeDashoffset = finalOffset;
-    }
-  }
-  requestAnimationFrame(frame);
-}
-
-function showWelcomeScreen() {
-  const mainArea = document.getElementById('slideshow-main');
-  const t = translations[currentLang] || translations.tr;
-  
-  mainArea.innerHTML = `
-    <div class="slideshow-welcome">
-      <span class="welcome-icon">📺</span>
-      <h2>${t.live_h2_title}</h2>
-      <p>${t.live_h2_sub}</p>
-      <div class="welcome-stats">
-        <div class="welcome-stat">
-          <div class="welcome-stat-value" id="welcome-total">0</div>
-          <div class="welcome-stat-label">${t.stat_total_inspector}</div>
-        </div>
-        <div class="welcome-stat">
-          <div class="welcome-stat-value" id="welcome-avg">0%</div>
-          <div class="welcome-stat-label">${t.avg_perf_plain}</div>
-        </div>
-      </div>
-      <button class="welcome-start-btn" onclick="toggleSlideshow()">
-        ${t.start_slideshow}
-      </button>
-    </div>
-  `;
-  
-  updateSlideWelcomeStats();
-}
-
-// ────────────────────────────
-// OTOMATİK GEÇİŞ
-// ────────────────────────────
-function startAutoSlide() {
-  // Mevcut interval'ları temizle
-  if (slideshowInterval) clearInterval(slideshowInterval);
-  if (progressInterval) clearInterval(progressInterval);
-  
-  // Progress bar'ı başlat
-  let progressWidth = 0;
-  const progressStep = 100 / (slideDuration / 100);
-  
-  progressInterval = setInterval(() => {
-    progressWidth += progressStep;
-    document.getElementById('progress-bar').style.width = progressWidth + '%';
-    
-    if (progressWidth >= 100) {
-      clearInterval(progressInterval);
-    }
-  }, 100);
-  
-  // Slide geçişi
-  slideshowInterval = setInterval(() => {
-    if (slideshowActive) {
-      currentSlideIndex = (currentSlideIndex + 1) % slideshowInspectors.length;
-      showSlide(currentSlideIndex);
-      
-      // Progress bar'ı sıfırla
-      progressWidth = 0;
-      document.getElementById('progress-bar').style.width = '0%';
-    }
-  }, slideDuration);
-}
-
-// ────────────────────────────
-// ANİMASYON EFEKTLERİ
-// ────────────────────────────
-function getAnimationName() {
-  switch(animationEffect) {
-    case 'fade': return 'fadeIn';
-    case 'zoom': return 'zoomIn';
-    case 'flip': return 'flipIn';
-    default: return 'slideInLeft';
-  }
-}
-
-// ────────────────────────────
-// AYAR FONKSİYONLARI
-// ────────────────────────────
-function updateSlideDuration() {
-  slideDuration = parseInt(document.getElementById('slide-duration').value);
-  if (slideshowActive) {
-    startAutoSlide(); // Yeni süreyle yeniden başlat
-  }
-}
-
-function updateDisplayMode() {
-  displayMode = document.getElementById('display-mode').value;
-  if (slideshowActive) {
-    prepareSlideshow();
-    currentSlideIndex = 0;
-    showSlide(0);
-    startAutoSlide();
-  }
-}
-
-function updateAnimationEffect() {
-  animationEffect = document.getElementById('animation-effect').value;
-}
-
-// ────────────────────────────
-// HEADER VE FOOTER GÜNCELLEMELERİ
-// ────────────────────────────
-function updateSlideHeader() {
-  const totalInspectors = slideshowInspectors.length;
-  const avgPerformance = totalInspectors > 0 
-    ? Math.round(slideshowInspectors.reduce((sum, i) => sum + getDispPerf(i), 0) / totalInspectors)
-    : 0;
-  
-  document.getElementById('slide-total-inspectors').textContent = totalInspectors;
-  document.getElementById('slide-avg-performance').textContent = avgPerformance + '%';
-  
-  // Saati güncelle
-  updateSlideClock();
-  setInterval(updateSlideClock, 1000);
-}
-
-function updateSlideClock() {
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('tr-TR', { 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  });
-  document.getElementById('slide-current-time').textContent = timeStr;
-}
-
-function updateSlideFooter(index) {
-  const total = slideshowInspectors.length;
-  document.getElementById('slide-counter').textContent = `${index + 1} / ${total}`;
-  
-  const today = new Date().toLocaleDateString('tr-TR', {
-    day: '2-digit',
-    month: '2-digit', 
-    year: 'numeric'
-  });
-  document.getElementById('slide-date').textContent = today;
-}
-
-// ────────────────────────────
-// TAM EKRAN YÖNETİMİ (GELİŞTİRİLMİŞ)
-// ────────────────────────────
-function toggleFullscreen() {
-  const container = document.getElementById('slideshow-container');
-  
-  if (!document.fullscreenElement && !container.classList.contains('fullscreen-mode')) {
-    // Tam ekran moduna geç
-    container.classList.add('fullscreen-mode');
-    
-    // Tarayıcı tam ekranını da dene
-    if (container.requestFullscreen) {
-      container.requestFullscreen().catch(() => {
-        console.log('Tarayıcı tam ekran desteklenmiyor, CSS tam ekran kullanılıyor');
-      });
-    }
-    
-    console.log('🖥️ Tam ekran modu açıldı');
-  } else {
-    // Tam ekran modundan çık
-    container.classList.remove('fullscreen-mode');
-    
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {
-        console.log('Tam ekran çıkış hatası');
-      });
-    }
-    
-    console.log('🖥️ Tam ekran modundan çıkıldı');
-  }
-}
-
-// Tam ekran değişiklik eventi (güncellendi)
-document.addEventListener('fullscreenchange', function() {
-  const container = document.getElementById('slideshow-container');
-  const isFullscreen = !!document.fullscreenElement;
-  
-  if (!isFullscreen && container.classList.contains('fullscreen-mode')) {
-    // Tarayıcı tam ekranından çıkıldıysa CSS tam ekranını da kapat
-    container.classList.remove('fullscreen-mode');
-  }
-});
-
-// ────────────────────────────
-// KLAVYE KONTROLÜ (TAM EKRANDA)
+// KLAVYE KONTROLÜ
 // ────────────────────────────
 document.addEventListener('keydown', function(e) {
-  if (document.fullscreenElement && slideshowActive) {
-    switch(e.key) {
-      case 'ArrowRight':
-      case ' ': // Space tuşu
-        e.preventDefault();
-        currentSlideIndex = (currentSlideIndex + 1) % slideshowInspectors.length;
-        showSlide(currentSlideIndex);
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        currentSlideIndex = currentSlideIndex > 0 ? currentSlideIndex - 1 : slideshowInspectors.length - 1;
-        showSlide(currentSlideIndex);
-        break;
-      case 'Escape':
-        e.preventDefault();
-        if (document.fullscreenElement) {
-          document.exitFullscreen();
-        } else {
-          stopSlideshow();
-        }
-        break;
-      case 'p':
-      case 'P':
-        e.preventDefault();
-        toggleSlideshow();
-        break;
-      case 'f':
-      case 'F':
-        e.preventDefault();
-        toggleFullscreen();
-        break;
-    }
-  }
-  
   // Genel klavye kısayolları
   if (e.ctrlKey && e.key === 's') {
     e.preventDefault();
@@ -7279,28 +6510,9 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ────────────────────────────
-// MOUSE KONTROLÜ (TAM EKRANDA)
+// MOUSE KONTROLÜ
 // ────────────────────────────
 document.addEventListener('click', function(e) {
-  if (document.fullscreenElement && slideshowActive) {
-    const container = document.getElementById('slideshow-container');
-    if (container.contains(e.target)) {
-      const rect = container.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const width = rect.width;
-      
-      if (x > width / 2) {
-        // Sağ yarı - sonraki slide
-        currentSlideIndex = (currentSlideIndex + 1) % slideshowInspectors.length;
-        showSlide(currentSlideIndex);
-      } else {
-        // Sol yarı - önceki slide
-        currentSlideIndex = currentSlideIndex > 0 ? currentSlideIndex - 1 : slideshowInspectors.length - 1;
-        showSlide(currentSlideIndex);
-      }
-    }
-  }
-
   // Diğer ekipler popup'ını dışarı tıklayınca kapat
   const popup = document.getElementById('diger-ekipler-popup');
   const btn   = document.getElementById('btn-diger-ekipler');
@@ -7314,41 +6526,6 @@ window.addEventListener('scroll', () => {
   const popup = document.getElementById('diger-ekipler-popup');
   if (popup && popup.style.display !== 'none') popup.style.display = 'none';
 }, true);
-
-// ────────────────────────────
-// TOUCH KONTROLÜ (MOBİL)
-// ────────────────────────────
-let touchStartX = 0;
-let touchEndX = 0;
-
-document.addEventListener('touchstart', function(e) {
-  if (document.fullscreenElement && slideshowActive) {
-    touchStartX = e.changedTouches[0].screenX;
-  }
-});
-
-document.addEventListener('touchend', function(e) {
-  if (document.fullscreenElement && slideshowActive) {
-    touchEndX = e.changedTouches[0].screenX;
-    handleGesture();
-  }
-});
-
-function handleGesture() {
-  const threshold = 50; // minimum swipe distance
-  
-  if (touchEndX < touchStartX - threshold) {
-    // Sol swipe - sonraki slide
-    currentSlideIndex = (currentSlideIndex + 1) % slideshowInspectors.length;
-    showSlide(currentSlideIndex);
-  }
-  
-  if (touchEndX > touchStartX + threshold) {
-    // Sağ swipe - önceki slide
-    currentSlideIndex = currentSlideIndex > 0 ? currentSlideIndex - 1 : slideshowInspectors.length - 1;
-    showSlide(currentSlideIndex);
-  }
-}
 
 // ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 // INIT & EVENT LISTENERS
@@ -7442,22 +6619,6 @@ window.addEventListener('beforeunload', function(e) {
       e.returnValue = 'Verileriniz kaydedilmemiş olabilir. Sayfadan çıkmak istediğinizden emin misiniz?';
       return e.returnValue;
     }
-  }
-});
-
-// Sayfa görünürlük değişiminde slideshow'u duraklat
-document.addEventListener('visibilitychange', function() {
-  if (document.hidden && slideshowActive) {
-    // Sayfa gizlendiğinde slideshow'u duraklat
-    if (slideshowInterval) {
-      clearInterval(slideshowInterval);
-    }
-    if (progressInterval) {
-      clearInterval(progressInterval);
-    }
-  } else if (!document.hidden && slideshowActive) {
-    // Sayfa tekrar görünür olduğunda slideshow'u devam ettir
-    startAutoSlide();
   }
 });
 
@@ -7559,19 +6720,10 @@ console.log(`
 ║                                                                                                              ║
 ║  🎯 Inspector performanslarını analiz edin                                                                   ║
 ║  📊 Excel verilerini yükleyin ve raporlayın                                                                 ║
-║  🎬 Canlı gösterim ile büyük ekranda izleyin                                                                ║
 ║                                                                                                              ║
 ║  ✅ Performans Hesaplama: Kontrol Edilen Adet ÷ Beklenen Adet × 100                                         ║
 ║  📅 Beklenen Adet: Günlük Hedef Adet × (Mesai Süresi ÷ 7.5 saat)                                            ║
 ║  🎯 Hedef: %100 = tam verimlilik, %100+ = hedeften hızlı                                                    ║
-║                                                                                                              ║
-║  📺 CANLI GÖSTERİM KLAVYE KOMUTLARI (Tam Ekranda):                                                          ║
-║  • → / Space: Sonraki slide                                                                                 ║
-║  • ←: Önceki slide                                                                                           ║
-║  • P: Oynat/Duraklat                                                                                        ║
-║  • F: Tam ekran aç/kapat                                                                                    ║
-║  • Escape: Çıkış                                                                                            ║
-║  • Mouse: Sol yarı = önceki, sağ yarı = sonraki                                                             ║
 ║                                                                                                              ║
 ║  🔧 GENEL KLAVYE KISAYOLLARI:                                                                                ║
 ║  • Ctrl+S: Kaydet                                                                                           ║
@@ -7585,389 +6737,12 @@ console.log(`
 ║  • Responsive tasarım                                                                                       ║
 ║  • Otomatik kaydetme                                                                                        ║
 ║  • Drag & drop dosya yükleme                                                                                ║
-║  • Canlı slideshow gösterimi                                                                                ║
-║  • Tam ekran desteği                                                                                        ║
-║  • Sol panel: En iyi 10 inspector                                                                           ║
 ║                                                                                                              ║
 ║  💡 İPUCU: Performans verileri localStorage'da otomatik kaydedilir                                           ║
 ║                                                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
 `);
 
-// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-// GELİŞTİRİLMİŞ GÖRSELLİK YARDIMCILARI
-// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-
-// ─── PARTİKÜL EFEKTI ───
-function _initParticles() {
-  const container = document.getElementById('slide-particles');
-  if (!container) return;
-  container.innerHTML = '';
-  const count = 18;
-  for (let i = 0; i < count; i++) {
-    const p = document.createElement('div');
-    p.className = 'slide-particle';
-    const size = 20 + Math.random() * 60;
-    const left = Math.random() * 100;
-    const dur = 8 + Math.random() * 12;
-    const delay = Math.random() * -15;
-    p.style.cssText = `width:${size}px;height:${size}px;left:${left}%;bottom:-${size}px;animation-duration:${dur}s;animation-delay:${delay}s;`;
-    container.appendChild(p);
-  }
-}
-
-// ─── COUNTDOWN RING ───
-let _ringInterval = null;
-let _ringStartTime = null;
-
-function _startCountdownRing() {
-  _stopCountdownRing();
-  const circumference = 113; // 2π × 18
-  _ringStartTime = Date.now();
-
-  function tick() {
-    const elapsed = Date.now() - _ringStartTime;
-    const fraction = Math.min(elapsed / slideDuration, 1);
-    const offset = circumference * fraction;
-    const rem = Math.max(0, Math.ceil((slideDuration - elapsed) / 1000));
-
-    const fill = document.getElementById('ring-fill');
-    const num  = document.getElementById('ring-num');
-    if (fill) fill.style.strokeDashoffset = offset;
-    if (num)  num.textContent = rem;
-
-    // Color: green → amber → red
-    let color = '#4CAF50';
-    if (fraction > 0.7)  color = '#FF9800';
-    if (fraction > 0.9)  color = '#ef5350';
-    if (fill) fill.style.stroke = color;
-  }
-
-  tick();
-  _ringInterval = setInterval(tick, 100);
-}
-
-function _resetCountdownRing() {
-  _ringStartTime = Date.now();
-}
-
-function _stopCountdownRing() {
-  if (_ringInterval) { clearInterval(_ringInterval); _ringInterval = null; }
-  const fill = document.getElementById('ring-fill');
-  const num  = document.getElementById('ring-num');
-  if (fill) fill.style.strokeDashoffset = 0;
-  if (num)  num.textContent = '';
-}
-
-// ─── showSlide'ı countdown ring ile güncelle ───
-const _origShowSlide = showSlide;
-
-
-// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-// HD VİDEO OLUŞTURMA — Slayt başına PNG yakala → WebM video
-// Yöntem: Her slayta bekle, html2canvas ile PNG al, canvas stream üzerinden MediaRecorder'a yaz
-// Kesiklik sorunu giderildi: sabit FPS stream + slayt arası geçiş beklemesi
-// ════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-
-let _vidRecorder   = null;
-let _vidChunks     = [];
-let _vidSlideTimer = null;
-let _vidCanvas     = null;
-let _vidCtx        = null;
-let _vidStream     = null;
-let _vidRendering  = false;
-let _vidFillTimer  = null;  // sabit FPS dolgu timer
-
-// HD sabit çözünürlük
-const VID_W = 1920;
-const VID_H = 1080;
-const VID_FPS = 30;
-
-function _loadHtml2Canvas() {
-  return new Promise((resolve, reject) => {
-    if (window.html2canvas) { resolve(); return; }
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('html2canvas yüklenemedi'));
-    document.head.appendChild(s);
-  });
-}
-
-// Canvas stream'i canlı tutan dolgu loop — MediaRecorder boş frame görmemesi için
-function _startFillLoop(ctx, w, h) {
-  if (_vidFillTimer) { clearInterval(_vidFillTimer); _vidFillTimer = null; }
-  _vidFillTimer = setInterval(() => {
-    // Mevcut içeriği koru; tamamen siyah/boşsa canlı gradient arka plan yaz
-    const px = ctx.getImageData(w>>1, h>>1, 1, 1).data;
-    if (px[0] === 0 && px[1] === 0 && px[2] === 0) {
-      _drawVividBg(ctx, w, h);
-    } else {
-      const imageData = ctx.getImageData(0, 0, w, h);
-      ctx.putImageData(imageData, 0, 0);
-    }
-  }, 1000 / VID_FPS);
-}
-
-// Canlı arka plan: koyu lacivert → orta mavi gradient
-function _drawVividBg(ctx, w, h) {
-  const grd = ctx.createLinearGradient(0, 0, w, h);
-  grd.addColorStop(0,   '#0B1F3A');
-  grd.addColorStop(0.4, '#102848');
-  grd.addColorStop(1,   '#0D2E55');
-  ctx.fillStyle = grd;
-  ctx.fillRect(0, 0, w, h);
-  // Köşe aksan
-  const g2 = ctx.createRadialGradient(w*0.15, h*0.85, 0, w*0.15, h*0.85, w*0.4);
-  g2.addColorStop(0, 'rgba(33,150,243,0.12)');
-  g2.addColorStop(1, 'transparent');
-  ctx.fillStyle = g2;
-  ctx.fillRect(0, 0, w, h);
-  const g3 = ctx.createRadialGradient(w*0.85, h*0.15, 0, w*0.85, h*0.15, w*0.35);
-  g3.addColorStop(0, 'rgba(21,101,192,0.10)');
-  g3.addColorStop(1, 'transparent');
-  ctx.fillStyle = g3;
-  ctx.fillRect(0, 0, w, h);
-}
-
-function _stopFillLoop() {
-  if (_vidFillTimer) { clearInterval(_vidFillTimer); _vidFillTimer = null; }
-}
-
-async function startVideoRecording() {
-  if (!performansData.length) {
-    alert('⚠️ Önce Performans Analizi sayfasından Excel yükleyin ve veri oluşturun!');
-    return;
-  }
-  if (_vidRendering) {
-    _stopVideoRecording();
-    return;
-  }
-
-  prepareSlideshow();
-  const inspCount = slideshowInspectors.length;
-  if (!inspCount) { alert('Gösterilecek inspector yok!'); return; }
-
-  const perSlideSec = parseInt(document.getElementById('slide-duration')?.value || 5000) / 1000;
-  const totalMin = Math.ceil((inspCount * perSlideSec + 5) / 60);
-
-  if (!confirm(
-    `🎥 HD Video Oluşturma (1920×1080)
-
-` +
-    `• ${inspCount} inspector × ${perSlideSec}sn ≈ ${totalMin} dk
-` +
-    `• Çözünürlük: 1920×1080 (Full HD)
-` +
-    `• Format: WebM (tüm tarayıcılarda desteklenir)
-` +
-    `• Oluşturma sırasında sayfada başka işlem yapmayın
-
-` +
-    `Başlamak istiyor musunuz?`
-  )) return;
-
-  const loadBtn = document.getElementById('video-rec-btn');
-  loadBtn.innerHTML = '⏳ Hazırlanıyor...';
-  loadBtn.disabled = true;
-
-  try {
-    await _loadHtml2Canvas();
-  } catch(e) {
-    alert('❌ html2canvas yüklenemedi: ' + e.message);
-    loadBtn.innerHTML = '🎥 Video Oluştur';
-    loadBtn.disabled = false;
-    return;
-  }
-
-  // HD canvas oluştur
-  _vidCanvas = document.createElement('canvas');
-  _vidCanvas.width  = VID_W;
-  _vidCanvas.height = VID_H;
-  _vidCtx = _vidCanvas.getContext('2d', { alpha: false });
-
-  // Canlı gradient arka planla başlat
-  _drawVividBg(_vidCtx, VID_W, VID_H);
-
-  // Stream al
-  _vidStream = _vidCanvas.captureStream(VID_FPS);
-
-  // En yüksek kalite codec seç
-  const mimeType = [
-    'video/webm;codecs=vp9',
-    'video/webm;codecs=vp8',
-    'video/webm'
-  ].find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
-
-  _vidRecorder = new MediaRecorder(_vidStream, {
-    mimeType,
-    videoBitsPerSecond: 12_000_000  // 12 Mbps — HD kalite
-  });
-  _vidChunks = [];
-  _vidRecorder.ondataavailable = e => { if (e.data?.size > 0) _vidChunks.push(e.data); };
-  _vidRecorder.onstop = _finishVideo;
-  _vidRecorder.start(200);  // Her 200ms'de bir chunk → akıcı kayıt
-  _vidRendering = true;
-
-  // Dolgu loop başlat (kesiklik önlenir)
-  _startFillLoop(_vidCtx, VID_W, VID_H);
-
-  loadBtn.innerHTML = '⏹️ Durdur';
-  loadBtn.className = 'btn btn-warning';
-  loadBtn.disabled  = false;
-  loadBtn.onclick   = _stopVideoRecording;
-
-  if (slideshowActive) stopSlideshow();
-  slideshowActive = true;
-  const canliCtrl = document.getElementById('canli-controls');
-  if (canliCtrl) canliCtrl.style.display = 'none';
-  document.getElementById('slideshow-btn').innerHTML = (translations[currentLang]||translations.tr).stop_slideshow;
-
-  _showRecordingIndicator();
-  showSuccessMessage((translations[currentLang]||translations.tr).hd_recording, 4000);
-
-  await _renderAllSlidesHD(inspCount, perSlideSec);
-
-  _stopVideoRecording();
-}
-
-async function _renderAllSlidesHD(total, perSlideSec) {
-  const container = document.getElementById('slideshow-container');
-
-  for (let i = 0; i < total && _vidRendering; i++) {
-    currentSlideIndex = i;
-    showSlide(i);
-    _updateRecordProgress(i + 1, total);
-
-    // Animasyon + DOM render için bekle
-    await _sleep(120);
-
-    // Slayt fotoğrafını çek (yüksek kalite)
-    try {
-      // Gerçek boyutları al; 0 ise güvenli fallback
-      const cW = container.offsetWidth  || container.getBoundingClientRect().width  || 1280;
-      const cH = container.offsetHeight || container.getBoundingClientRect().height || 720;
-      const bestScale = Math.min(VID_W / cW, 4); // max 4× güvenlik sınırı
-
-      // Arka planı garantile (canlı gradient)
-      _drawVividBg(_vidCtx, VID_W, VID_H);
-
-      const tempCanvas = await html2canvas(container, {
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: null,   // container kendi arka planını taşısın
-        scale: bestScale,
-        logging: false,
-        removeContainer: false,
-        imageTimeout: 0,
-        foreignObjectRendering: false
-      });
-
-      // Dolgu loop durdur — şimdi gerçek frame yazacağız
-      _stopFillLoop();
-
-      // HD canvas'a çiz
-      _vidCtx.drawImage(tempCanvas, 0, 0, VID_W, VID_H);
-
-      // Slayt süresi boyunca aynı frame'i tut (akıcı tutmak için mini loop)
-      const slideEnd = Date.now() + (perSlideSec * 1000);
-      while (Date.now() < slideEnd && _vidRendering) {
-        // Frame'i yenile (freeze kalmaması için)
-        _vidCtx.drawImage(tempCanvas, 0, 0, VID_W, VID_H);
-        await _sleep(1000 / VID_FPS);
-      }
-
-      // Dolgu loop tekrar başlat
-      _startFillLoop(_vidCtx, VID_W, VID_H);
-
-    } catch(err) {
-      console.warn('Slayt render hatası:', err);
-      // Hata durumunda geçiş yap
-      await _sleep(perSlideSec * 1000);
-    }
-  }
-}
-
-function _sleep(ms) {
-  return new Promise(r => setTimeout(r, ms));
-}
-
-function _stopVideoRecording() {
-  _vidRendering = false;
-  _stopFillLoop();
-  clearTimeout(_vidSlideTimer);
-
-  if (_vidRecorder && _vidRecorder.state !== 'inactive') {
-    _vidRecorder.stop();
-  }
-  if (_vidStream) {
-    _vidStream.getTracks().forEach(t => t.stop());
-    _vidStream = null;
-  }
-
-  _hideRecordingIndicator();
-
-  const btn = document.getElementById('video-rec-btn');
-  if (btn) {
-    btn.innerHTML = '🎥 Video Oluştur';
-    btn.className = 'btn btn-success';
-    btn.disabled  = false;
-    btn.onclick   = startVideoRecording;
-  }
-
-  stopSlideshow();
-}
-
-function _finishVideo() {
-  if (!_vidChunks.length) {
-    alert('⚠️ Video verisi oluşturulamadı. Tarayıcı MediaRecorder desteğini kontrol edin.');
-    return;
-  }
-  const mimeType = _vidChunks[0]?.type || 'video/webm';
-  const blob = new Blob(_vidChunks, { type: mimeType });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  const date = new Date().toLocaleDateString('tr-TR').replace(/\./g, '-');
-  a.href     = url;
-  a.download = `LCW_Inspection_HD_${date}.webm`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 8000);
-  const mb = (blob.size / 1024 / 1024).toFixed(1);
-  showSuccessMessage(`🎬 HD Video indirildi! ${mb} MB — 1920×1080`, 6000);
-  _vidChunks = [];
-}
-
-function _showRecordingIndicator() {
-  let el = document.getElementById('rec-indicator');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'rec-indicator';
-    el.style.cssText = `
-      position:fixed;top:68px;right:20px;z-index:9998;
-      background:linear-gradient(135deg,#B71C1C,#C62828);color:#fff;
-      padding:8px 18px;border-radius:9px;font-size:12px;font-weight:700;
-      box-shadow:0 4px 20px rgba(198,40,40,.5);
-      display:flex;align-items:center;gap:8px;letter-spacing:.3px;
-    `;
-    document.head.insertAdjacentHTML('beforeend', `<style>
-      @keyframes recPulse{0%,100%{opacity:1}50%{opacity:.7}}
-      #rec-indicator{animation:recPulse 1.2s infinite;}
-    </style>`);
-    document.body.appendChild(el);
-  }
-  el.innerHTML = `<span style="width:9px;height:9px;background:#fff;border-radius:50%;display:inline-block;flex-shrink:0"></span> HD REC <span id="rec-progress" style="font-family:'DM Mono',monospace;font-size:11px;opacity:.85">0/?</span>`;
-  el.style.display = 'flex';
-}
-
-function _updateRecordProgress(cur, total) {
-  const el = document.getElementById('rec-progress');
-  if (el) el.textContent = `${cur}/${total}`;
-}
-
-function _hideRecordingIndicator() {
-  const el = document.getElementById('rec-indicator');
-  if (el) el.style.display = 'none';
-}
 
 
 
@@ -7975,7 +6750,6 @@ if (window.location.hostname === 'localhost' || window.location.hostname === '12
   window.lcDebug = {
     klasmanlar: () => klasmanlar,
     performansData: () => performansData,
-    slideshowInspectors: () => slideshowInspectors,
     clearAll: () => {
       localStorage.removeItem('lc_inspection_data');
       location.reload();
@@ -8013,7 +6787,6 @@ if (window.location.hostname === 'localhost' || window.location.hostname === '12
         }
       ];
       renderDashboard();
-      renderTopInspectors();
       console.log('✅ Test verisi eklendi');
     }
   };
