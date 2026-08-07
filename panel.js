@@ -1958,6 +1958,11 @@ async function pushPerformansManual(ev) {
       // kullanılıyor ki kart ile Sheets'e giden sayı asla farklı çıkmasın.
       const verimlilikPerfPush = getEfektifPerfSeviye(inspector, inspector.genelHizPerf || 0).adetBazliPerf;
 
+      // Google Sheets aynasındaki (mirror) "İkinci Inspection" sütunu için:
+      // sadece o an içinde bulunulan çeyreğin (Q1-Q4) geçti/kaldı oranı.
+      // Veri yoksa null gönderilir — GS tarafında '—' olarak gösterilir.
+      const ikinciInspMirror = getIkinciInspectionOraniForInspector(inspector.ins).percent;
+
       return {
         ...inspector,
         klasmanlar: klasmanlarTemiz,
@@ -1965,6 +1970,7 @@ async function pushPerformansManual(ev) {
         gunlukOvertimeDetay: inspector.gunlukOvertimeDetay || {},
         hedefVerimlilik: _manualHedef,
         verimlilikPerf: verimlilikPerfPush,
+        ikinciInspPerf: ikinciInspMirror,
         orneklemeMod: _manualOrneklemeMod,
         orneklemeTarihliAktif: _manualOrneklemeTarihliAktif,
         orneklemeDonemleri: _manualOrneklemeTarihliAktif ? orneklemeDonemleri : []
@@ -9446,9 +9452,16 @@ function getTeknikIncelemeSkorForInspector(inspectorName) {
 // değil) İkinci Inspection kayıtlarındaki Geçti/Toplam oranını (%) döner.
 // Kayıt yoksa null — "ne ödül ne ceza" ilkesiyle tutarlı, veri yoksa hiçbir
 // yönde etki etmez.
+// NOT: Teknik İnceleme Skoru ile AYNI mantık — panelin sabit Q1-Q4 çeyrek
+// sistemi (Q1 Şub-Mar-Nis · Q2 May-Haz-Tem · Q3 Ağu-Eyl-Eki · Q4 Kas-Ara-Oca)
+// referans alınır, sadece İÇİNDE BULUNULAN ÇEYREĞİN kayıtları sayılır.
+// Önceki bir çeyrekte girilmiş geçti/kaldı kayıtları farklı bir çeyrekteyken
+// orana YANSIMAZ (bkz. _tarihCeyrekAnahtari).
 function getIkinciInspectionOraniForInspector(inspectorName) {
   const nameNorm = String(inspectorName || '').toLowerCase().trim();
-  const kayitlar = ikinciInspectionData.filter(r => String(r.inspector || '').toLowerCase().trim() === nameNorm);
+  const suankiCeyrekAnahtari = (typeof _tarihCeyrekAnahtari === 'function') ? _tarihCeyrekAnahtari(new Date()) : null;
+  const kayitlar = ikinciInspectionData.filter(r => String(r.inspector || '').toLowerCase().trim() === nameNorm
+    && (suankiCeyrekAnahtari === null || _tarihCeyrekAnahtari(r.tarih) === suankiCeyrekAnahtari));
   if (!kayitlar.length) return { percent: null, count: 0, geciSayisi: 0 };
   const geciSayisi = kayitlar.filter(r => r.sonuc === 'Geçti').length;
   const percent = Math.round((geciSayisi / kayitlar.length) * 100);
