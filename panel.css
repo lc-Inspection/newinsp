@@ -254,6 +254,8 @@ body {
 .btn-pulse-warning { animation: btnPulseWarning 1.6s ease-in-out infinite; }
 .btn-warning { background: var(--amber); border-color: var(--amber); color: #fff; }
 .btn-warning:hover { background: #E65100; border-color: #E65100; }
+.btn-danger { background: var(--red); border-color: var(--red); color: #fff; }
+.btn-danger:hover { background: #B71C1C; border-color: #B71C1C; }
 
 /* ─── INPUTS ─── */
 input, select, textarea {
