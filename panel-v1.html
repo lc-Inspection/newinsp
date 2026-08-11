@@ -19,6 +19,7 @@
 <!-- ─── END PWA META ─── -->
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <link rel="stylesheet" href="panel.css">
 </head>
 <body>
@@ -1152,11 +1153,13 @@
           <div id="depo-analiz-toggle" style="display:flex;background:#EFF6FF;border:1px solid #DDEEFF;border-radius:10px;padding:3px;gap:2px">
             <button class="depo-toggle-btn active" data-mod="gunluk" onclick="setDepoAnalizModu('gunluk')">📅 Günlük</button>
             <button class="depo-toggle-btn" data-mod="haftalik" onclick="setDepoAnalizModu('haftalik')">🗓️ Haftalık</button>
+            <button class="depo-toggle-btn" data-mod="simulasyon" onclick="setDepoAnalizModu('simulasyon')">📈 6 Ay Simülasyon</button>
           </div>
         </div>
       </div>
 
       <div id="depo-analiz-icerik"></div>
+      <div id="depo-simulasyon-icerik" style="display:none"></div>
     </div>
 
 
