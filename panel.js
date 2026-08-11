@@ -578,6 +578,23 @@ let kayipZamanData = []; // { id, inspector, tarih, gun, baslangic, bitis, sebep
 // inspector kartlarındaki toplamOvertimeAdet ile BİREBİR aynı mantık.
 let depoAnalizVerisi = {};
 
+// Excel'deki "InspectionYapilanDepo" sütununda aynı fiziksel depo farklı
+// isimlerle (ana depo / DIR deposu / tamir atölyesi vb.) geçebiliyor. Bu
+// eşleme, Depo Analizi'nde bunları TEK bir karta birleştirir. Sol taraf
+// (büyük harf, tam eşleşme) → sağ taraftaki standart isme yazılır.
+const DEPO_ANALIZ_ALIAS = {
+  'AKSARAY DEPO':            'AKSARAY DEPO',
+  'AKSARAY DIR DEPO':        'AKSARAY DEPO',
+  'AKSARAY TAMİR ATÖLYESİ':  'AKSARAY DEPO',
+  'YALOVA DEPO':             'YALOVA DEPO',
+  'YALOVA DIR DEPO':         'YALOVA DEPO',
+  'YALOVA TAMİR ATÖLYESİ':   'YALOVA DEPO'
+};
+function _depoAnalizAdiNormalize(ham) {
+  const anahtar = String(ham || '').trim().toLocaleUpperCase('tr-TR');
+  return DEPO_ANALIZ_ALIAS[anahtar] || String(ham || '').trim();
+}
+
 // Set nesneleri doğrudan JSON'a çevrilemediği için sunucuya göndermeden
 // önce diziye, sunucudan gelince de tekrar Set'e çeviren yardımcılar.
 function _depoAnalizSerialize(v) {
@@ -6374,10 +6391,11 @@ function performansHesapla(){
     // olarak GERÇEKLEŞEN tüm adetleri sayar (bu, "ne kadar iş fiilen
     // yapıldı" sorusuna cevap veriyor — performans hesabı değil).
     if (depoValErken && tarihGecerli) {
-      if (!depoAnalizVerisi[depoValErken]) {
-        depoAnalizVerisi[depoValErken] = { inspectors: new Set(), byDate: {}, byInspector: {} };
+      const depoAnalizAdi = _depoAnalizAdiNormalize(depoValErken);
+      if (!depoAnalizVerisi[depoAnalizAdi]) {
+        depoAnalizVerisi[depoAnalizAdi] = { inspectors: new Set(), byDate: {}, byInspector: {} };
       }
-      const dv = depoAnalizVerisi[depoValErken];
+      const dv = depoAnalizVerisi[depoAnalizAdi];
       dv.inspectors.add(ins);
       const gunStr = parsedBaslangic.toDateString();
       if (!dv.byDate[gunStr]) dv.byDate[gunStr] = { mesaili: 0, mesaisiz: 0 };
