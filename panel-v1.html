@@ -579,6 +579,9 @@
           <p style="font-size:12px;color:var(--muted)">Q1 (Şub-Mar-Nis) · Q2 (May-Haz-Tem) · Q3 (Ağu-Eyl-Eki) · Q4 (Kas-Ara-Oca) — her çeyreğin verisi kalıcıdır, dönem değişince silinmez</p>
         </div>
         <div class="ph-buttons">
+          <button class="btn btn-danger" onclick="openCeyrekTemizleModal()" id="ceyrek-temizle-btn" style="display:none">
+            🗑️ Veri Temizle
+          </button>
           <button class="btn btn-primary" onclick="exportCeyrekArsiviToExcel()" id="ceyrek-excel-btn">
             📊 Excel'e Aktar
           </button>
@@ -1249,6 +1252,33 @@
     <div id="depo-detay-content" style="margin-top:14px"></div>
     <div class="modal-actions">
       <button class="btn" onclick="document.getElementById('depo-detay-modal').style.display='none'">Kapat</button>
+    </div>
+  </div>
+</div>
+
+<!-- Çeyrek Verisi Temizle Modal (admin-only) -->
+<div class="modal-overlay" id="ceyrek-temizle-modal" onclick="if(event.target===this)closeCeyrekTemizleModal()">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-title">🗑️ Çeyrek Verisi Temizle</div>
+    <div class="modal-sub">Seçtiğiniz çeyreklerin verisi TÜM inspector'lar için kalıcı olarak silinir. Bu işlem geri alınamaz.</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin:18px 0">
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#F4F8FF;border:1.5px solid #DDEEFF;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;color:var(--navy)">
+        <input type="checkbox" id="ceyrek-tem-q1" value="Q1" style="width:16px;height:16px;accent-color:var(--blue)"> Q1 (Şub-Mar-Nis)
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#F4F8FF;border:1.5px solid #DDEEFF;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;color:var(--navy)">
+        <input type="checkbox" id="ceyrek-tem-q2" value="Q2" style="width:16px;height:16px;accent-color:var(--blue)"> Q2 (May-Haz-Tem)
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#F4F8FF;border:1.5px solid #DDEEFF;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;color:var(--navy)">
+        <input type="checkbox" id="ceyrek-tem-q3" value="Q3" style="width:16px;height:16px;accent-color:var(--blue)"> Q3 (Ağu-Eyl-Eki)
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#F4F8FF;border:1.5px solid #DDEEFF;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;color:var(--navy)">
+        <input type="checkbox" id="ceyrek-tem-q4" value="Q4" style="width:16px;height:16px;accent-color:var(--blue)"> Q4 (Kas-Ara-Oca)
+      </label>
+      <button type="button" class="btn btn-sm" onclick="toggleCeyrekTemizleTumu()" style="align-self:flex-start;margin-top:2px">☑️ Tümünü Seç / Kaldır</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeCeyrekTemizleModal()">İptal</button>
+      <button class="btn btn-danger" onclick="ceyrekVerisiTemizle()">🗑️ Seçilenleri Sil</button>
     </div>
   </div>
 </div>
