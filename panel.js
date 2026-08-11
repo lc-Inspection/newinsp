@@ -578,6 +578,82 @@ let kayipZamanData = []; // { id, inspector, tarih, gun, baslangic, bitis, sebep
 // inspector kartlarındaki toplamOvertimeAdet ile BİREBİR aynı mantık.
 let depoAnalizVerisi = {};
 
+// Set nesneleri doğrudan JSON'a çevrilemediği için sunucuya göndermeden
+// önce diziye, sunucudan gelince de tekrar Set'e çeviren yardımcılar.
+function _depoAnalizSerialize(v) {
+  const out = {};
+  Object.keys(v).forEach(depo => {
+    const dv = v[depo];
+    out[depo] = {
+      inspectors: Array.from(dv.inspectors || []),
+      byDate: dv.byDate || {},
+      byInspector: {}
+    };
+    Object.keys(dv.byInspector || {}).forEach(ins => {
+      const dvi = dv.byInspector[ins];
+      out[depo].byInspector[ins] = {
+        toplam: dvi.toplam || 0, mesaili: dvi.mesaili || 0, mesaisiz: dvi.mesaisiz || 0,
+        gunler: Array.from(dvi.gunler || [])
+      };
+    });
+  });
+  return out;
+}
+function _depoAnalizDeserialize(raw) {
+  const out = {};
+  Object.keys(raw || {}).forEach(depo => {
+    const dv = raw[depo] || {};
+    out[depo] = {
+      inspectors: new Set(dv.inspectors || []),
+      byDate: dv.byDate || {},
+      byInspector: {}
+    };
+    Object.keys(dv.byInspector || {}).forEach(ins => {
+      const dvi = dv.byInspector[ins] || {};
+      out[depo].byInspector[ins] = {
+        toplam: dvi.toplam || 0, mesaili: dvi.mesaili || 0, mesaisiz: dvi.mesaisiz || 0,
+        gunler: new Set(dvi.gunler || [])
+      };
+    });
+  });
+  return out;
+}
+
+// Depo analizini PHP/MySQL'e (cPanel — asıl aktif veritabanı) gönderir.
+// Her çağrı TAMAMEN üzerine yazar (backend'de TRUNCATE mantığı yok, tek
+// satırlık kv_store kaydı UPSERT ile değişir) — yani her yeni Excel
+// gönderiminde önceki depo verisi otomatik olarak yenisiyle değişir.
+async function _pushDepoAnalizToServer() {
+  try {
+    const res = await fetch(PHP_PERFORMANS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'setDepoAnaliz', token: DEFAULT_API_TOKEN, veri: _depoAnalizSerialize(depoAnalizVerisi) })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const resp = await res.json();
+    if (!resp || resp.status !== 'ok') throw new Error(resp?.message || 'kaydetme hatası');
+  } catch (e) {
+    console.warn('Depo analizi kaydetme hatası:', e.message);
+  }
+}
+
+// Sunucudaki (başka bir bilgisayardan en son gönderilmiş) depo analizini
+// çeker. Sadece bu oturumda henüz Excel yüklenip hesaplanmamışsa çağrılır —
+// aksi halde bu oturumun kendi taze verisi zaten daha güncel/doğrudur.
+async function _loadDepoAnalizFromServer() {
+  try {
+    const res = await fetch(PHP_PERFORMANS_API_URL + '?action=getDepoAnaliz&token=' + encodeURIComponent(DEFAULT_API_TOKEN));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data && data.status === 'ok' && data.veri) {
+      depoAnalizVerisi = _depoAnalizDeserialize(data.veri);
+    }
+  } catch (e) {
+    console.warn('Depo analizi çekme hatası:', e.message);
+  }
+}
+
 // "Bugünün tarihi"ni YEREL saate göre (YYYY-MM-DD) döner — new Date().
 // toISOString() KULLANMAZ çünkü o UTC'ye çevirir ve gece yarısına yakın
 // saatlerde (özellikle UTC+3 Türkiye saatinde) bir gün KAYABİLİR: örneğin
@@ -2008,6 +2084,10 @@ async function pushPerformansManual(ev) {
       const resp = await res.json();
       if (!resp || resp.status !== 'ok') throw new Error(resp?.message || 'cPanel API kaydetme hatası');
       console.log('✅ Performans verisi cPanel/MySQL\u2019e gönderildi:', resp.count, 'inspector');
+      // Depo Analizi verisi de aynı anda gönderilir — her gönderimde TAMAMEN
+      // üzerine yazılır, böylece "başka bilgisayarda eski veri görünüyor"
+      // sorunu oluşmaz (fire-and-forget, ana akışı bekletmez/bozmaz).
+      _pushDepoAnalizToServer();
     } else {
       // ── ESKİ YOL: Google Apps Script / Sheets (artık kullanılmıyor, geriye dönük) ──
       // PHP_PERFORMANS_API_URL her zaman dolu olduğundan bu dal normalde hiç
@@ -2895,7 +2975,7 @@ function showPage(id, navEl){
   } else if(id === 'teknik-inceleme') {
     loadTeknikInceleme();
   } else if(id === 'depo-analiz') {
-    renderDepoAnaliz();
+    loadDepoAnalizVeGoster();
   }
 }
 
@@ -9508,6 +9588,19 @@ function setDepoAnalizModu(mod) {
     if (simEl)    simEl.style.display = 'none';
     renderDepoAnaliz();
   }
+}
+
+// Sayfa açıldığında çağrılır. Bu oturumda ZATEN bir Excel yüklenip
+// hesaplanmışsa (depoAnalizVerisi dolu) o taze veri kullanılır — sunucuya
+// gidilmez. Boşsa (bu bilgisayarda henüz Excel yüklenmediyse) sunucudan
+// en son gönderilen depo verisi çekilip gösterilir.
+async function loadDepoAnalizVeGoster() {
+  if (Object.keys(depoAnalizVerisi).length === 0 && PHP_PERFORMANS_API_URL) {
+    const el = document.getElementById('depo-analiz-icerik');
+    if (el) el.innerHTML = `<div style="text-align:center;padding:60px 20px;color:var(--muted)">⏳ Sunucudan depo verisi çekiliyor...</div>`;
+    await _loadDepoAnalizFromServer();
+  }
+  renderDepoAnaliz();
 }
 
 function renderDepoAnaliz() {
