@@ -9427,12 +9427,22 @@ async function tiMukerrerKriterleriTemizle() {
 // "InspectionYapilanDepo" sütunu seçiliyse doldurulur — bkz. o fonksiyondaki
 // "DEPO ANALİZİ BİRİKTİRME" bloğu). Mesaili/Mesaisiz ayrımı panelin geneli
 // ile AYNI kaynaktan (kayitNormalMi — 16:45 sınırı) geliyor.
-let _depoAnalizModu = 'gunluk'; // 'gunluk' | 'haftalik'
+let _depoAnalizModu = 'gunluk'; // 'gunluk' | 'haftalik' | 'simulasyon'
 
 function setDepoAnalizModu(mod) {
   _depoAnalizModu = mod;
   document.querySelectorAll('.depo-toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.mod === mod));
-  renderDepoAnaliz();
+  const gercekEl = document.getElementById('depo-analiz-icerik');
+  const simEl    = document.getElementById('depo-simulasyon-icerik');
+  if (mod === 'simulasyon') {
+    if (gercekEl) gercekEl.style.display = 'none';
+    if (simEl)    simEl.style.display = 'block';
+    renderDepoSimulasyon();
+  } else {
+    if (gercekEl) gercekEl.style.display = 'block';
+    if (simEl)    simEl.style.display = 'none';
+    renderDepoAnaliz();
+  }
 }
 
 function renderDepoAnaliz() {
@@ -9557,6 +9567,186 @@ function showDepoDetay(depoAdi) {
 
   const modal = document.getElementById('depo-detay-modal');
   if (modal) modal.style.display = 'flex';
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 6 AYLIK DEPO SİMÜLASYONU
+// ════════════════════════════════════════════════════════════════════════
+// Yöntem: her depo için, geçmiş verideki HAFTANIN GÜNÜ bazlı ortalama
+// (örn. geçmişte Pazartesiler ortalama ne kadar gerçekleşmişse) çıkarılır,
+// sonra bu değer önümüzdeki 182 gün (~6 ay) için o günün haftaiçi/haftasonu
+// karşılığına göre tekrarlanarak projekte edilir. Böylece düz bir çizgi
+// yerine gerçekçi, haftalık dalgalanan bir öngörü elde edilir. Yeni personel
+// alımı, iş hacmi artışı gibi etkenler dahil DEĞİLDİR — "mevcut gidişat
+// aynen sürerse" senaryosudur, bu UI'da açıkça belirtilir.
+let _depoSimGranularite = 'aylik'; // 'gunluk' | 'haftalik' | 'aylik'
+let _depoSimCharts = {};
+
+const AY_ISIMLERI_KISA = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+
+function setDepoSimGranularite(g) {
+  _depoSimGranularite = g;
+  document.querySelectorAll('.depo-sim-gran-btn').forEach(b => b.classList.toggle('active', b.dataset.g === g));
+  renderDepoSimulasyon();
+}
+
+// dv.byDate → [0..6] (Pazar..Cumartesi, JS Date.getDay() ile aynı) günlük ortalama adet
+function _depoHaftaninGunuOrtalamalari(dv) {
+  const toplamlar = [0,0,0,0,0,0,0];
+  const sayaclar  = [0,0,0,0,0,0,0];
+  Object.entries(dv.byDate).forEach(([gs, v]) => {
+    const gun = new Date(gs).getDay();
+    toplamlar[gun] += (v.mesaisiz + v.mesaili);
+    sayaclar[gun]++;
+  });
+  const genelToplam = toplamlar.reduce((a,b) => a+b, 0);
+  const genelSayac  = sayaclar.reduce((a,b) => a+b, 0);
+  const genelOrtalama = genelSayac > 0 ? genelToplam / genelSayac : 0;
+  // O haftanın günü için hiç veri yoksa genel ortalamaya düş (boşluk bırakmamak için)
+  return toplamlar.map((t, i) => sayaclar[i] > 0 ? t / sayaclar[i] : genelOrtalama);
+}
+
+function _depoSimAgregele(gunler, gran) {
+  if (gran === 'gunluk') {
+    return {
+      labels: gunler.map(g => `${g.date.getDate()} ${AY_ISIMLERI_KISA[g.date.getMonth()]}`),
+      values: gunler.map(g => g.adet)
+    };
+  }
+  if (gran === 'haftalik') {
+    const buckets = [];
+    for (let i = 0; i < gunler.length; i += 7) {
+      const dilim = gunler.slice(i, i + 7);
+      const toplam = dilim.reduce((s, g) => s + g.adet, 0);
+      const ilkGun = dilim[0].date;
+      buckets.push({ label: `${ilkGun.getDate()} ${AY_ISIMLERI_KISA[ilkGun.getMonth()]} haftası`, toplam });
+    }
+    return { labels: buckets.map(b => b.label), values: buckets.map(b => b.toplam) };
+  }
+  // aylik
+  const aylar = {};
+  const siraliAnahtar = [];
+  gunler.forEach(g => {
+    const key = g.date.getFullYear() + '-' + g.date.getMonth();
+    if (!aylar[key]) { aylar[key] = { label: AY_ISIMLERI_KISA[g.date.getMonth()] + ' ' + g.date.getFullYear(), toplam: 0 }; siraliAnahtar.push(key); }
+    aylar[key].toplam += g.adet;
+  });
+  return { labels: siraliAnahtar.map(k => aylar[k].label), values: siraliAnahtar.map(k => aylar[k].toplam) };
+}
+
+function renderDepoSimulasyon() {
+  const el = document.getElementById('depo-simulasyon-icerik');
+  if (!el) return;
+
+  const depolar = Object.keys(depoAnalizVerisi);
+  if (!depolar.length) {
+    el.innerHTML = `
+      <div style="text-align:center;padding:70px 20px;color:var(--muted);background:#fff;border-radius:14px;border:1px solid #E3EEFC">
+        <div style="font-size:44px;margin-bottom:14px">📈</div>
+        <div style="font-size:16px;font-weight:800;color:var(--navy);margin-bottom:8px">Simülasyon için veri yok</div>
+        <div style="font-size:12.5px">Önce "InspectionYapilanDepo" sütunu seçili bir Excel yükleyin.</div>
+      </div>`;
+    return;
+  }
+
+  let maxDate = null;
+  depolar.forEach(d => {
+    Object.keys(depoAnalizVerisi[d].byDate).forEach(gs => {
+      const dt = new Date(gs);
+      if (!maxDate || dt > maxDate) maxDate = dt;
+    });
+  });
+  if (!maxDate) maxDate = new Date();
+
+  const baslangic = new Date(maxDate); baslangic.setDate(baslangic.getDate() + 1); baslangic.setHours(0,0,0,0);
+  const GUN_SAYISI = 182; // ~6 ay
+
+  const projeksiyonlar = {};
+  const siraliDepolar = depolar.sort((a,b) => a.localeCompare(b,'tr'));
+  siraliDepolar.forEach(depoAdi => {
+    const haftaOrt = _depoHaftaninGunuOrtalamalari(depoAnalizVerisi[depoAdi]);
+    const gunler = [];
+    for (let i = 0; i < GUN_SAYISI; i++) {
+      const d = new Date(baslangic); d.setDate(d.getDate() + i);
+      gunler.push({ date: d, adet: Math.round(haftaOrt[d.getDay()]) });
+    }
+    projeksiyonlar[depoAdi] = gunler;
+  });
+
+  const COLORS_DEPO = ['#1565C0','#00897B','#E65100','#7B1FA2','#2E7D32','#C62828','#4527A0','#00695C'];
+  const toplam6Ay = siraliDepolar.reduce((s,d) => s + projeksiyonlar[d].reduce((s2,g)=>s2+g.adet,0), 0);
+  const gunlukOrtToplam = Math.round(toplam6Ay / GUN_SAYISI);
+
+  el.innerHTML = `
+    <div style="background:#fff;border:1px solid #E3EEFC;border-radius:14px;padding:18px 20px;margin-bottom:16px">
+      <div style="font-size:11px;color:#7b4f00;line-height:1.6;background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:10px 14px;margin-bottom:16px">
+        ℹ️ Bu öngörü, her deponun <strong>geçmiş verideki haftanın günü bazlı ortalamasına</strong> dayanır — örn. geçmişte Pazartesiler ortalama ne kadar gerçekleşmişse, gelecekteki her Pazartesi için de o değer kullanılır. Yeni personel alımı, iş hacmi değişikliği gibi etkenler dahil değildir — <strong>"mevcut gidişat aynen sürerse"</strong> senaryosudur.
+      </div>
+      <div class="depo-stat-row" style="margin-bottom:18px">
+        <div class="depo-stat-mini" style="flex:1"><div class="v">${formatTR(toplam6Ay)}</div><div class="l">Toplam Öngörülen (6 Ay)</div></div>
+        <div class="depo-stat-mini" style="flex:1"><div class="v">${formatTR(gunlukOrtToplam)}</div><div class="l">Günlük Ort. (Tüm Depolar)</div></div>
+        <div class="depo-stat-mini" style="flex:1"><div class="v">${siraliDepolar.length}</div><div class="l">Depo</div></div>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:16px">
+        ${['gunluk','haftalik','aylik'].map(g => `
+          <button class="depo-sim-gran-btn ${g === _depoSimGranularite ? 'active' : ''}" data-g="${g}" onclick="setDepoSimGranularite('${g}')">
+            ${g === 'gunluk' ? '📅 Günlük' : g === 'haftalik' ? '🗓️ Haftalık' : '📆 Aylık'}
+          </button>`).join('')}
+      </div>
+      <div class="depo-sim-grid">
+        ${siraliDepolar.map((depoAdi, i) => {
+          const toplamDepo = projeksiyonlar[depoAdi].reduce((s,g)=>s+g.adet,0);
+          return `
+            <div class="depo-sim-card">
+              <div class="depo-sim-card-hdr">
+                <span>🏭 ${_escapeHtml(depoAdi)}</span>
+                <span class="depo-sim-toplam">${formatTR(toplamDepo)} adet / 6 ay</span>
+              </div>
+              <div style="padding:14px"><canvas id="depoSimChart_${i}" height="180"></canvas></div>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  Object.values(_depoSimCharts).forEach(c => c.destroy());
+  _depoSimCharts = {};
+  if (typeof Chart === 'undefined') return; // Chart.js yüklenemediyse sessizce çık (kartlar/rakamlar yine görünür)
+
+  siraliDepolar.forEach((depoAdi, i) => {
+    const canvas = document.getElementById('depoSimChart_' + i);
+    if (!canvas) return;
+    const { labels, values } = _depoSimAgregele(projeksiyonlar[depoAdi], _depoSimGranularite);
+    const renk = COLORS_DEPO[i % COLORS_DEPO.length];
+    const gunlukMod = _depoSimGranularite === 'gunluk';
+    _depoSimCharts[depoAdi] = new Chart(canvas.getContext('2d'), {
+      type: gunlukMod ? 'line' : 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Öngörülen Adet',
+          data: values,
+          borderColor: renk,
+          backgroundColor: gunlukMod ? renk + '22' : renk + 'CC',
+          fill: gunlukMod,
+          tension: 0.35,
+          pointRadius: gunlukMod ? 0 : 4,
+          pointHoverRadius: 5,
+          borderRadius: 6,
+          borderWidth: 2,
+          maxBarThickness: 34
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => formatTR(ctx.parsed.y) + ' adet' } } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 10, font: { size: 9 } }, grid: { display: false } },
+          y: { beginAtZero: true, ticks: { font: { size: 9 }, callback: v => formatTR(v) } }
+        }
+      }
+    });
+  });
 }
 
 // ─── localStorage cache ───
