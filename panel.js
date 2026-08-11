@@ -564,6 +564,20 @@ let excelCols = [];
 let performansData = [];
 let kayipZamanData = []; // { id, inspector, tarih, gun, baslangic, bitis, sebep, aciklama, ekipYoneticisi, sureDk }
 
+// ── DEPO ANALİZİ ────────────────────────────────────────────────────────
+// performansHesapla() her çalıştığında (Excel'de "InspectionYapilanDepo"
+// sütunu seçiliyse) YENİDEN doldurulur. Yapı:
+// { [depoAdi]: {
+//     inspectors: Set<isim>,
+//     byDate: { [toDateString]: { mesaili: adet, mesaisiz: adet } },
+//     byInspector: { [isim]: { toplam, mesaili, mesaisiz, gunler: Set<toDateString> } }
+// } }
+// "mesaili"/"mesaisiz" ayrımı, panelin GENELİNDE kullanılan TEK doğru
+// kaynaktan geliyor — kayitNormalMi(bitisSaati) — yani 16:45 sonrası biten
+// kayıtlar "mesaili" (overtime), öncesi "mesaisiz" (normal) sayılır. Bu,
+// inspector kartlarındaki toplamOvertimeAdet ile BİREBİR aynı mantık.
+let depoAnalizVerisi = {};
+
 // "Bugünün tarihi"ni YEREL saate göre (YYYY-MM-DD) döner — new Date().
 // toISOString() KULLANMAZ çünkü o UTC'ye çevirir ve gece yarısına yakın
 // saatlerde (özellikle UTC+3 Türkiye saatinde) bir gün KAYABİLİR: örneğin
@@ -710,7 +724,8 @@ const ASSIGNABLE_TABS = [
   { id: 'dashboard',        label: 'Dashboard' },
   { id: 'performans',       label: 'Performans Analizi' },
   { id: 'ceyrek-performans',label: 'Çeyrek Performans' },
-  { id: 'teknik-inceleme',  label: 'Teknik İnceleme' }
+  { id: 'teknik-inceleme',  label: 'Teknik İnceleme' },
+  { id: 'depo-analiz',      label: '🏭 Depo Analizi' }
 ];
 
 // Yeni bilgisayar tespiti: localStorage'da config hiç yoksa
@@ -2875,6 +2890,8 @@ function showPage(id, navEl){
     loadKayipZamanAdmin();
   } else if(id === 'teknik-inceleme') {
     loadTeknikInceleme();
+  } else if(id === 'depo-analiz') {
+    renderDepoAnaliz();
   }
 }
 
@@ -5914,6 +5931,7 @@ function performansHesapla(){
   });
 
   const inspectorMap = {};
+  depoAnalizVerisi = {}; // Her hesaplamada baştan doldurulur
   const yeniOtoKlasmanlar = new Set(); // Excel'de karşılaşılan, otomatik tanınan yeni klasman adları
   let basariliTarihKayitlar = 0;
   let tarihHataliKayitlar = 0;
@@ -6204,6 +6222,34 @@ function performansHesapla(){
       }
     }
     const kayitNormalSayilir = kayitNormalMi(parsedBitis);
+
+    // ── DEPO ANALİZİ BİRİKTİRME ──────────────────────────────────────────
+    // Sadece "InspectionYapilanDepo" sütunu seçiliyse ve satırın deposu
+    // biliniyorsa çalışır. 2.Kalite/overtime-toggle filtrelerinden BAĞIMSIZ
+    // olarak GERÇEKLEŞEN tüm adetleri sayar (bu, "ne kadar iş fiilen
+    // yapıldı" sorusuna cevap veriyor — performans hesabı değil).
+    if (depoValErken && tarihGecerli) {
+      if (!depoAnalizVerisi[depoValErken]) {
+        depoAnalizVerisi[depoValErken] = { inspectors: new Set(), byDate: {}, byInspector: {} };
+      }
+      const dv = depoAnalizVerisi[depoValErken];
+      dv.inspectors.add(ins);
+      const gunStr = parsedBaslangic.toDateString();
+      if (!dv.byDate[gunStr]) dv.byDate[gunStr] = { mesaili: 0, mesaisiz: 0 };
+      if (!dv.byInspector[ins]) dv.byInspector[ins] = { toplam: 0, mesaili: 0, mesaisiz: 0, gunler: new Set() };
+      const dvi = dv.byInspector[ins];
+      dvi.toplam += adet;
+      dvi.gunler.add(gunStr);
+      if (kayitNormalSayilir) {
+        dv.byDate[gunStr].mesaisiz += adet;
+        dvi.mesaisiz += adet;
+      } else {
+        dv.byDate[gunStr].mesaili += adet;
+        dvi.mesaili += adet;
+      }
+    }
+    // ── DEPO ANALİZİ BİRİKTİRME SONU ─────────────────────────────────────
+
     kl.kayitlar.push({ no: kl.kayitlar.length + 1, klasman: excelKlasman, adet, standartSure, standartSureHam, kayitFiiliSure, kontrolAdetSuresi: klasmanInfo.urunKontrolSuresi, istasyonSuresi: klasmanInfo.istasyonSuresi, istasyonDetay: klasmanInfo.istasyonDetay || [], baslangic: parsedBaslangic, bitis: parsedBitis, tarihGecerli, normalMesai: kayitNormalSayilir, talepNo: talepColFallback ? String(row[talepColFallback]||'').trim() : '', inspectionTipi: inspectionTipiRaw, is2Kalite });
 
     // Overtime'da (16:45 sonrası) kontrol edilen toplam adedi ayrıca izle —
@@ -9372,6 +9418,145 @@ async function tiMukerrerKriterleriTemizle() {
   renderTiKriterYonetimList();
   await kaydetTeknikKriterler();
   alert(`✅ ${silinen} mükerrer kriter silindi.`);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// DEPO ANALİZİ SAYFASI
+// ════════════════════════════════════════════════════════════════════════
+// Veri kaynağı: depoAnalizVerisi (performansHesapla() içinde, Excel'deki
+// "InspectionYapilanDepo" sütunu seçiliyse doldurulur — bkz. o fonksiyondaki
+// "DEPO ANALİZİ BİRİKTİRME" bloğu). Mesaili/Mesaisiz ayrımı panelin geneli
+// ile AYNI kaynaktan (kayitNormalMi — 16:45 sınırı) geliyor.
+let _depoAnalizModu = 'gunluk'; // 'gunluk' | 'haftalik'
+
+function setDepoAnalizModu(mod) {
+  _depoAnalizModu = mod;
+  document.querySelectorAll('.depo-toggle-btn').forEach(b => b.classList.toggle('active', b.dataset.mod === mod));
+  renderDepoAnaliz();
+}
+
+function renderDepoAnaliz() {
+  const el = document.getElementById('depo-analiz-icerik');
+  if (!el) return;
+
+  const depolar = Object.keys(depoAnalizVerisi);
+  if (!depolar.length) {
+    el.innerHTML = `
+      <div style="text-align:center;padding:70px 20px;color:var(--muted);background:#fff;border-radius:14px;border:1px solid #E3EEFC">
+        <div style="font-size:44px;margin-bottom:14px">🏭</div>
+        <div style="font-size:16px;font-weight:800;color:var(--navy);margin-bottom:8px">Depo verisi bulunamadı</div>
+        <div style="font-size:12.5px;max-width:420px;margin:0 auto;line-height:1.6">
+          Bu sayfanın çalışması için Excel yüklerken <strong>"InspectionYapilanDepo"</strong> sütununun seçili olması gerekir
+          (Dashboard sayfasındaki sütun eşleme ayarlarından kontrol edin).
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Tüm depolar genelindeki EN GÜNCEL tarihi bul — "bugün"/"bu hafta" bunun
+  // üzerinden hesaplanır (Excel'in kendi tarih aralığına göre, sistem
+  // saatine göre değil — veri geçmişe ait olabileceği için daha doğru).
+  let maxDate = null;
+  depolar.forEach(d => {
+    Object.keys(depoAnalizVerisi[d].byDate).forEach(gs => {
+      const dt = new Date(gs);
+      if (!maxDate || dt > maxDate) maxDate = dt;
+    });
+  });
+
+  const periyotLabel = _depoAnalizModu === 'gunluk' ? 'GÜNLÜK GERÇEKLEŞEN' : 'HAFTALIK GERÇEKLEŞEN (son 7 gün)';
+
+  const cards = depolar.sort((a,b) => a.localeCompare(b,'tr')).map(depoAdi => {
+    const dv = depoAnalizVerisi[depoAdi];
+    const gunSayisi = Object.keys(dv.byDate).length;
+    const calisanSayisi = dv.inspectors.size;
+
+    let mesaisiz = 0, mesaili = 0;
+    if (maxDate) {
+      Object.entries(dv.byDate).forEach(([gs, v]) => {
+        const dt = new Date(gs);
+        const farkGun = Math.round((maxDate - dt) / 86400000);
+        const dahil = _depoAnalizModu === 'gunluk' ? farkGun === 0 : (farkGun >= 0 && farkGun < 7);
+        if (dahil) { mesaisiz += v.mesaisiz; mesaili += v.mesaili; }
+      });
+    }
+    const toplam = mesaisiz + mesaili;
+    const mesaisizYuzde = toplam > 0 ? Math.round((mesaisiz / toplam) * 100) : 0;
+    const safeDepoAdi = depoAdi.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+    return `
+      <div class="depo-card">
+        <div class="depo-card-hdr">
+          <h4>🏭 ${_escapeHtml(depoAdi)}</h4>
+        </div>
+        <div class="depo-card-body">
+          <div class="depo-stat-row">
+            <div class="depo-stat-mini"><div class="v">${calisanSayisi}</div><div class="l">Çalışan</div></div>
+            <div class="depo-stat-mini"><div class="v">${gunSayisi}</div><div class="l">Çalışma Günü</div></div>
+          </div>
+          <div class="depo-realized-box">
+            <div class="toplam">${formatTR(toplam)}</div>
+            <div class="toplam-label">${periyotLabel}</div>
+            <div class="depo-split-bar">
+              <div class="mesaisiz" style="width:${mesaisizYuzde}%"></div>
+              <div class="mesaili" style="width:${100 - mesaisizYuzde}%"></div>
+            </div>
+            <div class="depo-split-legend">
+              <span class="mesaisiz-lbl">🟢 Mesaisiz: ${formatTR(mesaisiz)}</span>
+              <span class="mesaili-lbl">🟠 Mesaili: ${formatTR(mesaili)}</span>
+            </div>
+          </div>
+          <button class="depo-detay-btn" onclick="showDepoDetay('${safeDepoAdi}')">📋 Inspector Detayını Gör</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `<div class="depo-grid">${cards}</div>`;
+}
+
+function showDepoDetay(depoAdi) {
+  const dv = depoAnalizVerisi[depoAdi];
+  if (!dv) return;
+
+  const titleEl = document.getElementById('depo-detay-title');
+  const subEl   = document.getElementById('depo-detay-sub');
+  if (titleEl) titleEl.textContent = '🏭 ' + depoAdi;
+  if (subEl)   subEl.textContent = `${dv.inspectors.size} inspector · ${Object.keys(dv.byDate).length} çalışma günü — inspector başına toplam gerçekleşen adet`;
+
+  const rows = Object.entries(dv.byInspector)
+    .map(([ins, v]) => ({ ins, toplam: v.toplam, mesaisiz: v.mesaisiz, mesaili: v.mesaili, gunSayisi: v.gunler.size }))
+    .sort((a, b) => b.toplam - a.toplam);
+
+  const tableRows = rows.map(r => `
+    <tr>
+      <td style="padding:8px 10px;font-size:12px;font-weight:700;color:var(--navy)">${_escapeHtml(r.ins)}</td>
+      <td style="padding:8px 10px;font-size:12px;text-align:center;font-weight:800;color:var(--navy);font-family:'DM Mono',monospace">${formatTR(r.toplam)}</td>
+      <td style="padding:8px 10px;font-size:11px;text-align:center;color:#00897B;font-weight:700">${formatTR(r.mesaisiz)}</td>
+      <td style="padding:8px 10px;font-size:11px;text-align:center;color:#E65100;font-weight:700">${formatTR(r.mesaili)}</td>
+      <td style="padding:8px 10px;font-size:11px;text-align:center;color:var(--muted)">${r.gunSayisi}</td>
+    </tr>`).join('');
+
+  const contentEl = document.getElementById('depo-detay-content');
+  if (contentEl) {
+    contentEl.innerHTML = `
+      <div style="overflow-x:auto;border:1px solid #E3EEFC;border-radius:10px">
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:#0B1F3A;color:#fff">
+              <th style="padding:9px 10px;text-align:left;font-size:10px;letter-spacing:.4px">INSPECTOR</th>
+              <th style="padding:9px 10px;text-align:center;font-size:10px;letter-spacing:.4px">TOPLAM</th>
+              <th style="padding:9px 10px;text-align:center;font-size:10px;letter-spacing:.4px">MESAİSİZ</th>
+              <th style="padding:9px 10px;text-align:center;font-size:10px;letter-spacing:.4px">MESAİLİ</th>
+              <th style="padding:9px 10px;text-align:center;font-size:10px;letter-spacing:.4px">GÜN</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  const modal = document.getElementById('depo-detay-modal');
+  if (modal) modal.style.display = 'flex';
 }
 
 // ─── localStorage cache ───
