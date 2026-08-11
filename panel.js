@@ -579,20 +579,24 @@ let kayipZamanData = []; // { id, inspector, tarih, gun, baslangic, bitis, sebep
 let depoAnalizVerisi = {};
 
 // Excel'deki "InspectionYapilanDepo" sütununda aynı fiziksel depo farklı
-// isimlerle (ana depo / DIR deposu / tamir atölyesi vb.) geçebiliyor. Bu
+// isimlerle (ana depo / DİR deposu / tamir atölyesi vb.) geçebiliyor. Bu
 // eşleme, Depo Analizi'nde bunları TEK bir karta birleştirir. Sol taraf
-// (büyük harf, tam eşleşme) → sağ taraftaki standart isme yazılır.
+// (Türkçe büyük harf — DİKKAT: "i" → "İ" olur, "I" değil, aksi halde
+// eşleşme sessizce başarısız olur) → sağ taraftaki standart isme yazılır.
 const DEPO_ANALIZ_ALIAS = {
   'AKSARAY DEPO':            'AKSARAY DEPO',
-  'AKSARAY DIR DEPO':        'AKSARAY DEPO',
+  'AKSARAY DİR DEPO':        'AKSARAY DEPO',
   'AKSARAY TAMİR ATÖLYESİ':  'AKSARAY DEPO',
   'YALOVA DEPO':             'YALOVA DEPO',
-  'YALOVA DIR DEPO':         'YALOVA DEPO',
+  'YALOVA DİR DEPO':         'YALOVA DEPO',
   'YALOVA TAMİR ATÖLYESİ':   'YALOVA DEPO'
 };
 function _depoAnalizAdiNormalize(ham) {
-  const anahtar = String(ham || '').trim().toLocaleUpperCase('tr-TR');
-  return DEPO_ANALIZ_ALIAS[anahtar] || String(ham || '').trim();
+  // Fazla/çift boşlukları teke indir, baş/son boşlukları temizle, SONRA
+  // Türkçe kurallarına göre büyük harfe çevir (i → İ) — yoksa "Dir"/"Tamir"
+  // gibi kelimeler alias tablosuyla eşleşmez.
+  const anahtar = String(ham || '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('tr-TR');
+  return DEPO_ANALIZ_ALIAS[anahtar] || String(ham || '').replace(/\s+/g, ' ').trim();
 }
 
 // Set nesneleri doğrudan JSON'a çevrilemediği için sunucuya göndermeden
@@ -9639,33 +9643,23 @@ function renderDepoAnaliz() {
     return;
   }
 
-  // Tüm depolar genelindeki EN GÜNCEL tarihi bul — "bugün"/"bu hafta" bunun
-  // üzerinden hesaplanır (Excel'in kendi tarih aralığına göre, sistem
-  // saatine göre değil — veri geçmişe ait olabileceği için daha doğru).
-  let maxDate = null;
-  depolar.forEach(d => {
-    Object.keys(depoAnalizVerisi[d].byDate).forEach(gs => {
-      const dt = new Date(gs);
-      if (!maxDate || dt > maxDate) maxDate = dt;
-    });
-  });
-
-  const periyotLabel = _depoAnalizModu === 'gunluk' ? 'GÜNLÜK GERÇEKLEŞEN' : 'HAFTALIK GERÇEKLEŞEN (son 7 gün)';
+  // NOT: Artık "en güncel tek gün" anlık görüntüsü DEĞİL — her depo kendi
+  // Çalışma Günü sayısına bölünmüş ORTALAMAYI gösteriyor. Bu, iki sorunu
+  // birden çözer: (1) bir depo o "en güncel" günde çalışmamışsa 0 görünmesi,
+  // (2) tek bir günün rastgele düşük/yüksek olması yüzünden yanıltıcı rakam
+  // çıkması. Haftalık = günlük ortalama × 7 (deponun tipik haftalık hacmi).
+  const periyotLabel = _depoAnalizModu === 'gunluk' ? 'GÜNLÜK ORTALAMA (GERÇEKLEŞEN)' : 'HAFTALIK ORTALAMA (7 GÜN)';
 
   const cards = depolar.sort((a,b) => a.localeCompare(b,'tr')).map(depoAdi => {
     const dv = depoAnalizVerisi[depoAdi];
     const gunSayisi = Object.keys(dv.byDate).length;
     const calisanSayisi = dv.inspectors.size;
 
-    let mesaisiz = 0, mesaili = 0;
-    if (maxDate) {
-      Object.entries(dv.byDate).forEach(([gs, v]) => {
-        const dt = new Date(gs);
-        const farkGun = Math.round((maxDate - dt) / 86400000);
-        const dahil = _depoAnalizModu === 'gunluk' ? farkGun === 0 : (farkGun >= 0 && farkGun < 7);
-        if (dahil) { mesaisiz += v.mesaisiz; mesaili += v.mesaili; }
-      });
-    }
+    let toplamMesaisizHam = 0, toplamMesailiHam = 0;
+    Object.values(dv.byDate).forEach(v => { toplamMesaisizHam += v.mesaisiz; toplamMesailiHam += v.mesaili; });
+    const carpan = _depoAnalizModu === 'gunluk' ? 1 : 7;
+    const mesaisiz = gunSayisi > 0 ? Math.round((toplamMesaisizHam / gunSayisi) * carpan) : 0;
+    const mesaili   = gunSayisi > 0 ? Math.round((toplamMesailiHam / gunSayisi) * carpan) : 0;
     const toplam = mesaisiz + mesaili;
     const mesaisizYuzde = toplam > 0 ? Math.round((mesaisiz / toplam) * 100) : 0;
     const safeDepoAdi = depoAdi.replace(/'/g, "\\'").replace(/"/g, '&quot;');
