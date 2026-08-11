@@ -125,6 +125,10 @@
       <span class="nav-icon">🧪</span>
       <span>Teknik İnceleme</span>
     </div>
+    <div class="nav-item" id="nav-depo-analiz" onclick="showPage('depo-analiz')">
+      <span class="nav-icon">🏭</span>
+      <span>Depo Analizi</span>
+    </div>
 
     <div class="sidebar-footer" style="margin-top: auto; padding: 12px 10px 0; border-top: 1px solid rgba(255,255,255,.06);">
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 7px; background: rgba(255,255,255,.04); margin-bottom: 6px;">
@@ -1137,6 +1141,24 @@
 
     </div>
 
+    <!-- ══════════ DEPO ANALİZİ ══════════ -->
+    <div id="page-depo-analiz" class="page">
+      <div class="ph">
+        <div class="ph-left">
+          <h1>🏭 Depo Analizi</h1>
+          <p>Depo bazında gerçekleşen adetler — mesaili / mesaisiz kırılımlı</p>
+        </div>
+        <div class="ph-buttons">
+          <div id="depo-analiz-toggle" style="display:flex;background:#EFF6FF;border:1px solid #DDEEFF;border-radius:10px;padding:3px;gap:2px">
+            <button class="depo-toggle-btn active" data-mod="gunluk" onclick="setDepoAnalizModu('gunluk')">📅 Günlük</button>
+            <button class="depo-toggle-btn" data-mod="haftalik" onclick="setDepoAnalizModu('haftalik')">🗓️ Haftalık</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="depo-analiz-icerik"></div>
+    </div>
+
 
   </main>
 </div>
@@ -1212,6 +1234,18 @@
     <div style="padding:14px 24px;border-top:1px solid var(--border2);display:flex;justify-content:flex-end;gap:8px;position:sticky;bottom:0;background:#fff">
       <button class="btn" onclick="window.print()">🖨️ Yazdır</button>
       <button class="btn btn-primary" onclick="document.getElementById('kz-rapor-overlay').style.display='none'">Kapat</button>
+    </div>
+  </div>
+</div>
+
+<!-- Depo Analizi — Inspector Detay Modal -->
+<div class="modal-overlay" id="depo-detay-modal" onclick="if(event.target===this)document.getElementById('depo-detay-modal').style.display='none'">
+  <div class="modal-box" style="max-width:640px;width:94vw;max-height:88vh;overflow-y:auto">
+    <div class="modal-title" id="depo-detay-title">🏭 Depo Detayı</div>
+    <div class="modal-sub" id="depo-detay-sub"></div>
+    <div id="depo-detay-content" style="margin-top:14px"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="document.getElementById('depo-detay-modal').style.display='none'">Kapat</button>
     </div>
   </div>
 </div>
