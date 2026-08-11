@@ -1172,6 +1172,10 @@ function applyUserPermissions() {
   // "Temizle" butonu sadece admin tarafından görülebilir
   const temizleBtn = document.getElementById('btn-temizle');
   if (temizleBtn) temizleBtn.style.display = (!currentUser || currentUser.isAdmin) ? '' : 'none';
+
+  // Çeyrek Performans Arşivi "Veri Temizle" butonu da sadece admin'e
+  const ceyrekTemizleBtn = document.getElementById('ceyrek-temizle-btn');
+  if (ceyrekTemizleBtn) ceyrekTemizleBtn.style.display = (!currentUser || currentUser.isAdmin) ? '' : 'none';
 }
 
 // Geriye dönük uyumluluk: bazı eski nav öğeleri requirePassword çağırabilir.
@@ -3443,6 +3447,67 @@ function _ceyrekExcelStyleSheet(ws, colCount, rowCount, rowBgFn) {
         }
       };
     }
+  }
+}
+
+// ── Çeyrek Performans Arşivi: Veri Temizle (admin-only) ─────────────────
+// Seçilen çeyrek(ler)in verisini TÜM inspector'lar için siler. "Emin
+// misiniz?" onayından SONRA admin şifresi istenir (appConfig.password ile
+// aynı — changePwPrompt() ile birebir aynı doğrulama kaynağı).
+function openCeyrekTemizleModal() {
+  if (currentUser && !currentUser.isAdmin) return; // ekstra güvenlik — buton zaten admin'e gizli değilse görünmez
+  ['q1','q2','q3','q4'].forEach(q => {
+    const el = document.getElementById('ceyrek-tem-' + q);
+    if (el) el.checked = false;
+  });
+  document.getElementById('ceyrek-temizle-modal').classList.add('open');
+}
+function closeCeyrekTemizleModal() {
+  document.getElementById('ceyrek-temizle-modal').classList.remove('open');
+}
+function toggleCeyrekTemizleTumu() {
+  const kutular = ['ceyrek-tem-q1','ceyrek-tem-q2','ceyrek-tem-q3','ceyrek-tem-q4'].map(id => document.getElementById(id));
+  const hepsiSeçili = kutular.every(el => el.checked);
+  kutular.forEach(el => { el.checked = !hepsiSeçili; });
+}
+async function ceyrekVerisiTemizle() {
+  const secilenler = ['Q1','Q2','Q3','Q4'].filter(q =>
+    document.getElementById('ceyrek-tem-' + q.toLowerCase())?.checked
+  );
+  if (!secilenler.length) { alert('⚠️ Lütfen en az bir çeyrek seçin.'); return; }
+
+  const qLabels = { Q1: 'Q1 (Şub-Mar-Nis)', Q2: 'Q2 (May-Haz-Tem)', Q3: 'Q3 (Ağu-Eyl-Eki)', Q4: 'Q4 (Kas-Ara-Oca)' };
+  const secilenMetin = secilenler.map(q => qLabels[q]).join(', ');
+
+  if (!confirm(`⚠️ ${secilenMetin} verisi TÜM inspector'lar için kalıcı olarak silinecek!\n\nBu işlem geri alınamaz. Emin misiniz?`)) return;
+
+  const sifre = prompt('Devam etmek için admin şifresini girin:');
+  if (sifre === null) return; // İptal
+  if (sifre !== appConfig.password) { alert('❌ Yanlış şifre! İşlem iptal edildi.'); return; }
+
+  const btn = document.querySelector('#ceyrek-temizle-modal .btn-danger');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.innerHTML = '⏳ Siliniyor...'; btn.disabled = true; }
+
+  try {
+    let etkilenenSayisi = 0;
+    Object.keys(ceyrekArsivi).forEach(key => {
+      secilenler.forEach(q => {
+        if (ceyrekArsivi[key][q] !== null && ceyrekArsivi[key][q] !== undefined) etkilenenSayisi++;
+        ceyrekArsivi[key][q] = null;
+      });
+    });
+
+    try { localStorage.setItem('ceyrek_arsivi', JSON.stringify(ceyrekArsivi)); } catch(e) {}
+    await _pushCeyrekArsiviToServer();
+
+    closeCeyrekTemizleModal();
+    renderCeyrekPerformansTablosu(true);
+    alert(`✅ ${secilenMetin} verisi silindi (${etkilenenSayisi} kayıt etkilendi).`);
+  } catch (err) {
+    alert('❌ Silme işlemi sırasında hata oluştu: ' + err.message);
+  } finally {
+    if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
   }
 }
 
