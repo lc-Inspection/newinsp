@@ -9648,26 +9648,43 @@ function renderDepoAnaliz() {
   // birden çözer: (1) bir depo o "en güncel" günde çalışmamışsa 0 görünmesi,
   // (2) tek bir günün rastgele düşük/yüksek olması yüzünden yanıltıcı rakam
   // çıkması. Haftalık = günlük ortalama × 7 (deponun tipik haftalık hacmi).
-  const periyotLabel = _depoAnalizModu === 'gunluk' ? 'GÜNLÜK ORTALAMA (GERÇEKLEŞEN)' : 'HAFTALIK ORTALAMA (7 GÜN)';
+  const periyotLabel = _depoAnalizModu === 'gunluk' ? 'GÜNLÜK ORTALAMA (GERÇEKLEŞEN)'
+    : _depoAnalizModu === 'haftalik' ? 'HAFTALIK ORTALAMA (7 GÜN)'
+    : 'AYLIK ORTALAMA (30 GÜN)';
 
-  const cards = depolar.sort((a,b) => a.localeCompare(b,'tr')).map(depoAdi => {
+  // Önce her depo için değerleri hesapla (isme göre değil, ADEDE göre
+  // sıralayabilmek için — hesap bitmeden sıralama yapılamaz).
+  const hesaplar = depolar.map(depoAdi => {
     const dv = depoAnalizVerisi[depoAdi];
     const gunSayisi = Object.keys(dv.byDate).length;
     const calisanSayisi = dv.inspectors.size;
 
     let toplamMesaisizHam = 0, toplamMesailiHam = 0;
     Object.values(dv.byDate).forEach(v => { toplamMesaisizHam += v.mesaisiz; toplamMesailiHam += v.mesaili; });
-    const carpan = _depoAnalizModu === 'gunluk' ? 1 : 7;
+    const carpan = _depoAnalizModu === 'gunluk' ? 1 : _depoAnalizModu === 'haftalik' ? 7 : 30;
     const mesaisiz = gunSayisi > 0 ? Math.round((toplamMesaisizHam / gunSayisi) * carpan) : 0;
     const mesaili   = gunSayisi > 0 ? Math.round((toplamMesailiHam / gunSayisi) * carpan) : 0;
     const toplam = mesaisiz + mesaili;
+    return { depoAdi, gunSayisi, calisanSayisi, mesaisiz, mesaili, toplam };
+  });
+
+  // Adede (toplam gerçekleşen) göre büyükten küçüğe sırala
+  hesaplar.sort((a, b) => b.toplam - a.toplam);
+
+  const RANK_RENK = ['#f0a202', '#c8c8c8', '#cd8a52']; // altın/gümüş/bronz
+
+  const cards = hesaplar.map((h, i) => {
+    const { depoAdi, gunSayisi, calisanSayisi, mesaisiz, mesaili, toplam } = h;
     const mesaisizYuzde = toplam > 0 ? Math.round((mesaisiz / toplam) * 100) : 0;
     const safeDepoAdi = depoAdi.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    const rozet = i < 3
+      ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:${RANK_RENK[i]};color:#fff;font-size:10.5px;font-weight:900;margin-right:6px;flex-shrink:0">${i+1}</span>`
+      : '';
 
     return `
       <div class="depo-card">
         <div class="depo-card-hdr">
-          <h4>🏭 ${_escapeHtml(depoAdi)}</h4>
+          <h4>${rozet}🏭 ${_escapeHtml(depoAdi)}</h4>
         </div>
         <div class="depo-card-body">
           <div class="depo-stat-row">
