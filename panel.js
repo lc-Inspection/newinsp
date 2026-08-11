@@ -9650,7 +9650,7 @@ function renderDepoAnaliz() {
   // çıkması. Haftalık = günlük ortalama × 7 (deponun tipik haftalık hacmi).
   const periyotLabel = _depoAnalizModu === 'gunluk' ? 'GÜNLÜK ORTALAMA (GERÇEKLEŞEN)'
     : _depoAnalizModu === 'haftalik' ? 'HAFTALIK ORTALAMA (7 GÜN)'
-    : 'AYLIK ORTALAMA (30 GÜN)';
+    : 'AYLIK ORTALAMA (26 İŞ GÜNÜ)';
 
   // Önce her depo için değerleri hesapla (isme göre değil, ADEDE göre
   // sıralayabilmek için — hesap bitmeden sıralama yapılamaz).
@@ -9661,7 +9661,9 @@ function renderDepoAnaliz() {
 
     let toplamMesaisizHam = 0, toplamMesailiHam = 0;
     Object.values(dv.byDate).forEach(v => { toplamMesaisizHam += v.mesaisiz; toplamMesailiHam += v.mesaili; });
-    const carpan = _depoAnalizModu === 'gunluk' ? 1 : _depoAnalizModu === 'haftalik' ? 7 : 30;
+    // Aylık çarpan 30 (takvim günü) değil 26 — şirketin gerçek aylık
+    // çalışma günü sayısı (kullanıcı talebiyle düzeltildi).
+    const carpan = _depoAnalizModu === 'gunluk' ? 1 : _depoAnalizModu === 'haftalik' ? 7 : 26;
     const mesaisiz = gunSayisi > 0 ? Math.round((toplamMesaisizHam / gunSayisi) * carpan) : 0;
     const mesaili   = gunSayisi > 0 ? Math.round((toplamMesailiHam / gunSayisi) * carpan) : 0;
     const toplam = mesaisiz + mesaili;
