@@ -3529,9 +3529,11 @@ function changeCeyrekSayfa(delta) {
 function _ceyrekSeviyeFromVerimlilik(v) {
   // ceyrekArsivi'ndeki 'verimlilik' değeri zaten adet-bazlı % olarak
   // saklanıyor (getEfektifPerfSeviye(...).adetBazliPerf — 450/gün hedefine
-  // göre). Aynı fonksiyonun 400/360/300 (adet/gün) eşiklerinin % karşılığı:
-  // 400/450≈%89, 360/450=%80, 300/450≈%67.
+  // göre). Aynı fonksiyonun eşiklerinin (Fark Yaratan >450, İyi 400-450,
+  // Orta 360-399, Gelişime Açık 300-359, Zayıf <300 adet/gün) % karşılığı:
+  // >450 → >%100, 400/450≈%89, 360/450=%80, 300/450≈%67.
   if (v === null || v === undefined) return null;
+  if (v > 100) return { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE' };
   if (v >= 89) return { key: 'iyi',    label: 'İyi',           color: '2563EB', bg: 'E3F2FD' };
   if (v >= 80) return { key: 'orta',   label: 'Orta',          color: 'F57F17', bg: 'FFF8E1' };
   if (v >= 67) return { key: 'acik',   label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE' };
@@ -3693,11 +3695,12 @@ function exportCeyrekArsiviToExcel() {
     const wb = XLSX.utils.book_new();
 
     // ── SAYFA 1: Özet ──
-    const sayac = { iyi: 0, orta: 0, acik: 0, zayif: 0, yok: 0 };
+    const sayac = { farkyaratan: 0, iyi: 0, orta: 0, acik: 0, zayif: 0, yok: 0 };
     zenginlestirilmis.forEach(({ ref }) => {
       if (!ref.seviye) sayac.yok++; else sayac[ref.seviye.key]++;
     });
     const ozetRows = [
+      { 'Kategori': 'Fark Yaratan',  'Sayı': sayac.farkyaratan },
       { 'Kategori': 'İyi',           'Sayı': sayac.iyi },
       { 'Kategori': 'Orta',          'Sayı': sayac.orta },
       { 'Kategori': 'Gelişime Açık', 'Sayı': sayac.acik },
@@ -3707,7 +3710,7 @@ function exportCeyrekArsiviToExcel() {
     ];
     const wsOzet = XLSX.utils.json_to_sheet(ozetRows);
     wsOzet['!cols'] = [{ wch: 20 }, { wch: 12 }];
-    const ozetBg = { 1: 'E3F2FD', 2: 'FFF8E1', 3: 'FFEBEE', 4: 'FFEBEE', 5: 'F0F0F0', 6: 'CFE3F7' };
+    const ozetBg = { 1: 'E1F5FE', 2: 'E3F2FD', 3: 'FFF8E1', 4: 'FFEBEE', 5: 'FFEBEE', 6: 'F0F0F0', 7: 'CFE3F7' };
     _ceyrekExcelStyleSheet(wsOzet, 2, ozetRows.length, R => ozetBg[R] || 'FFFFFF');
     XLSX.utils.book_append_sheet(wb, wsOzet, 'Özet');
 
@@ -3737,8 +3740,9 @@ function exportCeyrekArsiviToExcel() {
     });
     XLSX.utils.book_append_sheet(wb, wsTum, 'Tüm Veriler');
 
-    // ── SAYFA 3-6: Her seviye için AYRI sayfa ──
+    // ── SAYFA 3-7: Her seviye için AYRI sayfa ──
     const kategoriler = [
+      { key: 'farkyaratan', ad: 'Fark Yaratan' },
       { key: 'iyi',   ad: 'İyi' },
       { key: 'orta',  ad: 'Orta' },
       { key: 'acik',  ad: 'Gelişime Açık' },
@@ -3775,7 +3779,7 @@ function exportCeyrekArsiviToExcel() {
       ws['!cols'] = [{ wch: 24 }, { wch: 16 }].concat(
         QC.flatMap(() => [{ wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 }])
       );
-      const bg = { iyi: 'E3F2FD', orta: 'FFF8E1', acik: 'FFEBEE', zayif: 'FFEBEE' }[kat.key];
+      const bg = { farkyaratan: 'E1F5FE', iyi: 'E3F2FD', orta: 'FFF8E1', acik: 'FFEBEE', zayif: 'FFEBEE' }[kat.key];
       _ceyrekExcelStyleSheet(ws, 2 + QC.length * 4, rows.length || 1, () => bg);
       XLSX.utils.book_append_sheet(wb, ws, kat.ad.length > 31 ? kat.ad.slice(0, 31) : kat.ad);
     });
