@@ -664,7 +664,14 @@ async function _pushDepoAnalizToServer() {
 // aksi halde bu oturumun kendi taze verisi zaten daha güncel/doğrudur.
 async function _loadDepoAnalizFromServer() {
   try {
-    const res = await fetch(PHP_PERFORMANS_API_URL + '?action=getDepoAnaliz&token=' + encodeURIComponent(DEFAULT_API_TOKEN));
+    // "no-store" + zaman damgalı sorgu parametresi: tarayıcı bu isteği HİÇ
+    // önbelleğe almasın — aksi halde aynı URL için hep aynı (eski) cevap
+    // döner, yeni bir "Sheets'e Gönder" yapılsa bile sunucudan gerçek
+    // güncel veri çekilmez (kullanıcı talebiyle bulunup düzeltildi).
+    const res = await fetch(
+      PHP_PERFORMANS_API_URL + '?action=getDepoAnaliz&token=' + encodeURIComponent(DEFAULT_API_TOKEN) + '&_=' + Date.now(),
+      { cache: 'no-store' }
+    );
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data && data.status === 'ok' && data.veri) {
