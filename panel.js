@@ -1687,9 +1687,9 @@ const listeTemiz = liste.map(inspector => {
   // Script tarafında tahmine/fallback'e gerek kalmasın, tam olarak karta
   // yansıyan sayı çekilsin.
   const _gunSayisiPush  = inspector.gunSayisi || 0;
-  const _normalAdetPush = (inspector.adet || 0) - (inspector.toplamOvertimeAdet || 0);
+  const _normalAdetPush = (inspector.toplamAdetGercek ?? inspector.adet ?? 0) - (inspector.toplamOvertimeAdet || 0);
   const gunlukOrtNormal = _gunSayisiPush > 0 ? Math.round(_normalAdetPush / _gunSayisiPush) : 0;
-  const gunlukOrtToplam = _gunSayisiPush > 0 ? Math.round((inspector.adet || 0) / _gunSayisiPush) : 0;
+  const gunlukOrtToplam = _gunSayisiPush > 0 ? Math.round((inspector.toplamAdetGercek ?? inspector.adet ?? 0) / _gunSayisiPush) : 0;
   return {
     ...inspector,
     klasmanlar: klasmanlarTemiz,
@@ -3097,7 +3097,7 @@ function getPerformanceLevelLabel(performans) {
 // (showPerfSeviyeDetay) hepsi bu TEK fonksiyonu kullanarak tutarlı kalır.
 function getEfektifPerfSeviye(inspector, performansVal) {
   const gunSayisi   = inspector.gunSayisi || 0;
-  const normalAdet  = (inspector.adet || 0) - (inspector.toplamOvertimeAdet || 0);
+  const normalAdet  = (inspector.toplamAdetGercek ?? inspector.adet ?? 0) - (inspector.toplamOvertimeAdet || 0);
   const gunlukOrtNormal = gunSayisi > 0 ? Math.round(normalAdet / gunSayisi) : 0;
   const t = translations[currentLang] || translations.tr;
 
@@ -3811,22 +3811,22 @@ function showPerfSeviyeDetay(seviyeKey) {
       : `<span style="color:var(--muted2)">—</span>`;
     // Günlük adet ortalamaları: mesaisiz (normal saatte, overtime hariç) ve mesaili (toplam)
     const _gunSayisiP  = insp.gunSayisi || 0;
-    const _normalAdetP = (insp.adet || 0) - (insp.toplamOvertimeAdet || 0);
+    const _normalAdetP = (insp.toplamAdetGercek ?? insp.adet ?? 0) - (insp.toplamOvertimeAdet || 0);
     const ortMesaisiz = _gunSayisiP > 0 ? Math.round(_normalAdetP / _gunSayisiP) : 0;
-    const ortMesaili   = _gunSayisiP > 0 ? Math.round((insp.adet || 0) / _gunSayisiP) : 0;
+    const ortMesaili   = _gunSayisiP > 0 ? Math.round((insp.toplamAdetGercek ?? insp.adet ?? 0) / _gunSayisiP) : 0;
     return `
       <tr style="border-bottom:1px solid var(--border2)">
         <td style="padding:9px 10px;font-weight:600;color:var(--navy);cursor:pointer" onclick="document.getElementById('perf-seviye-popup').style.display='none'; showInspectorDetail('${insp.ins.replace(/'/g, "\\'")}')">${_escapeHtml(_formatDisplayName(insp.ins))}</td>
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${insp.gunSayisi || 0} gün${azVeriMi(insp.gunSayisi) ? '<br>' + azVeriRozetiHtml('badge') : ''}</td>
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${formatTR(ortMesaisiz)}</td>
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${formatTR(ortMesaili)}</td>
-        <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${formatTR((insp.adet || 0))}</td>
+        <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${formatTR((insp.toplamAdetGercek ?? insp.adet ?? 0))}</td>
         <td style="padding:9px 10px;text-align:center">${otHtml}</td>
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;font-weight:700;color:${perfColor}" title="${perf}%">${_efektif.label}</td>
       </tr>`;
   }).join('');
 
-  const toplamAdet = liste.reduce((s, i) => s + (i.adet || 0), 0);
+  const toplamAdet = liste.reduce((s, i) => s + (i.toplamAdetGercek ?? i.adet ?? 0), 0);
   const ortGun = Math.round(liste.reduce((s, i) => s + (i.gunSayisi || 0), 0) / liste.length);
   const ortPerf = Math.round(liste.reduce((s, i) => s + getEfektifPerfSeviye(i, i.genelHizPerf || 0).adetBazliPerf, 0) / liste.length);
 
@@ -3896,7 +3896,7 @@ function onOvertimeDahilChange() {
   if (performansData && performansData.length > 0) {
     performansData.forEach(row => {
       const normalMesai = row.mesaiSure - (row.overtimeMesaiSure || 0);
-      const normalAdet  = (row.adet || 0) - (row.toplamOvertimeAdet || 0);
+      const normalAdet  = (row.toplamAdetGercek ?? row.adet ?? 0) - (row.toplamOvertimeAdet || 0);
       const adetPay = _overtimeDahil
         ? (row.adet || 0)
         : (normalAdet > 0 ? normalAdet : (row.adet || 0));
@@ -4179,9 +4179,9 @@ function renderInspectorCards() {
 
     // Günlük adet ortalamaları: normal saatte (overtime hariç) ve toplam
     const _gunSayisiC   = inspector.gunSayisi || 0;
-    const _normalAdetC  = (inspector.adet || 0) - (inspector.toplamOvertimeAdet || 0);
+    const _normalAdetC  = (inspector.toplamAdetGercek ?? inspector.adet ?? 0) - (inspector.toplamOvertimeAdet || 0);
     const _gunlukOrtNormal = _gunSayisiC > 0 ? Math.round(_normalAdetC / _gunSayisiC) : 0;
-    const _gunlukOrtToplam = _gunSayisiC > 0 ? Math.round((inspector.adet || 0) / _gunSayisiC) : 0;
+    const _gunlukOrtToplam = _gunSayisiC > 0 ? Math.round((inspector.toplamAdetGercek ?? inspector.adet ?? 0) / _gunSayisiC) : 0;
 
     return `
       <div class="inspector-card ${performansClass}">
@@ -4212,7 +4212,7 @@ function renderInspectorCards() {
         <!-- Ana İstatistikler -->
         <div class="inspector-stats">
           <div class="inspector-stat">
-            <div class="inspector-stat-value">${formatTR(inspector.adet)}</div>
+            <div class="inspector-stat-value">${formatTR(inspector.toplamAdetGercek ?? inspector.adet ?? 0)}</div>
             <div class="inspector-stat-label" data-i18n="total_qty">Toplam Adet</div>
           </div>
           <div class="inspector-stat">
@@ -6272,6 +6272,15 @@ function performansHesapla(){
         ins: ins,
         klasmanlar: {},
         toplamAdet: 0,
+        // "Overtime'ı Genel Performansa Dahil Et" toggle'ından TAMAMEN
+        // BAĞIMSIZ, HER ZAMAN dolan GERÇEK toplam (normal + overtime).
+        // toplamAdet ise toggle kapalıyken overtime kayıtlarını dışarıda
+        // bırakır (performans hesabı için). "TOPLAM ADET"/"GÜNLÜK ORT.
+        // (TOPLAM)" gibi HAM gösterim alanları hep bunu kullanmalı — yoksa
+        // toggle kapalıyken hem toplam eksik gösterilir HEM DE normalAdet
+        // hesabı (toplamAdet - toplamOvertimeAdet) overtime'ı ÇİFT çıkarmış
+        // olur (bkz. getEfektifPerfSeviye).
+        toplamAdetGercek: 0,
         toplamOvertimeAdet: 0, // Overtime (16:45 sonrası) döneminde kontrol edilen toplam adet — yalnızca gösterim/rapor amaçlı
         kayitListesi: [],
         gun2KaliteSet: new Set(), // 2.Kalite kontrolü yapılan GÜNLER (performansı süre değil gün sayısına göre hesaplamak için)
@@ -6428,6 +6437,8 @@ function performansHesapla(){
     if (is2Kalite && !_2KaliteDahil) {
       // toplamAdet'e eklenmedi (yukarıda hariç tutuldu)
     } else {
+      // GERÇEK toplam — overtime toggle'ından bağımsız, HER ZAMAN eklenir.
+      inspectorMap[ins].toplamAdetGercek = (inspectorMap[ins].toplamAdetGercek || 0) + adet;
       // Overtime toggle kapalıysa overtime kayıtları adet toplamına da girmesin
       const kayitNormalSayilir2 = kayitNormalMi(parsedBitis);
       if (!_overtimeDahil && !kayitNormalSayilir2) {
@@ -6638,7 +6649,9 @@ function performansHesapla(){
       toplam2KaliteFiiliSure: toplam2KaliteFiiliSure,
       perf2Kalite: perf2Kalite,
       // Overtime'da kontrol edilen toplam adet — yalnızca gösterim/rapor amaçlı
-      toplamOvertimeAdet: inspectorData.toplamOvertimeAdet || 0
+      toplamOvertimeAdet: inspectorData.toplamOvertimeAdet || 0,
+      // Toggle'dan bağımsız GERÇEK toplam — bkz. inspectorMap init'teki not
+      toplamAdetGercek: inspectorData.toplamAdetGercek || 0
     };
 
     // ÖNEMLİ DÜZELTME: map[ins].verimlilikPerf artık, obje tamamen kurulduktan
@@ -7444,7 +7457,7 @@ function _ekipEfektifSeviye(teamInspectors) {
   if (!teamInspectors || !teamInspectors.length) {
     return { label: '—', color: 'var(--muted)', gunlukOrtNormal: 0 };
   }
-  const toplamNormalAdet = teamInspectors.reduce((s, i) => s + Math.max(0, (i.adet || 0) - (i.toplamOvertimeAdet || 0)), 0);
+  const toplamNormalAdet = teamInspectors.reduce((s, i) => s + Math.max(0, (i.toplamAdetGercek ?? i.adet ?? 0) - (i.toplamOvertimeAdet || 0)), 0);
   const toplamGunSayisi  = teamInspectors.reduce((s, i) => s + (i.gunSayisi || 0), 0);
   const gunlukOrtNormal  = toplamGunSayisi > 0 ? Math.round(toplamNormalAdet / toplamGunSayisi) : 0;
 
