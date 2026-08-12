@@ -107,10 +107,10 @@ const translations = {
     // Summary stats
     stat_total_inspector: 'Toplam Inspector',
     stat_excellent:       'Mükemmel (≥95%)',
-    stat_good:            'İyi (≥98%)',
-    stat_average:         'Orta (88-97%)',
-    stat_poor:            'Gelişime Açık (73-87%)',
-    stat_verypoor:        'Zayıf (<73%)',
+    stat_good:            'İyi (≥400 adet/gün)',
+    stat_average:         'Orta (360-399 adet/gün)',
+    stat_poor:            'Gelişime Açık (300-359 adet/gün)',
+    stat_verypoor:        'Zayıf (<300 adet/gün)',
     stat_avg_perf:        '📅 Ortalama Performans',
     stat_avg_days:        '⏰ Ortalama Çalışma Günü',
     stat_total_product:   '📦 Toplam Ürün',
@@ -3787,10 +3787,10 @@ function exportCeyrekArsiviToExcel() {
 // oranı ile birlikte tablo halinde gösterir.
 // ─────────────────────────────────────────────
 const PERF_SEVIYE_TANIM = {
-  good:      { label: 'İyi (≥98%)',              icon: '👍', min: 98,  max: Infinity, color: 'var(--blue)'  },
-  average:   { label: 'Orta (88-97%)',           icon: '⚠️', min: 88,  max: 98,       color: 'var(--amber)' },
-  weak:      { label: 'Gelişime Açık (73-87%)',  icon: '🔻', min: 73,  max: 88,       color: '#EF5350'      },
-  verypoor:  { label: 'Zayıf (<73%)',             icon: '📉', min: -Infinity, max: 73, color: '#B71C1C'      }
+  good:      { label: 'İyi (≥400 adet/gün)',              icon: '👍', min: 98,  max: Infinity, color: 'var(--blue)'  },
+  average:   { label: 'Orta (360-399 adet/gün)',           icon: '⚠️', min: 88,  max: 98,       color: 'var(--amber)' },
+  weak:      { label: 'Gelişime Açık (300-359 adet/gün)',  icon: '🔻', min: 73,  max: 88,       color: '#EF5350'      },
+  verypoor:  { label: 'Zayıf (<300 adet/gün)',             icon: '📉', min: -Infinity, max: 73, color: '#B71C1C'      }
 };
 
 
