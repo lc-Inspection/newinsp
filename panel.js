@@ -5523,13 +5523,19 @@ function renderPerfTabloFromData(page) {
     const globalIdx = startIdx + idx + 1;
     const ini = row.ins.split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
     const performans = row.genelHizPerf ?? 0;
-    const performansClass = getPerformanceClass(performans);
+    // Panelin GENELİNDEKİ TEK doğru kaynak — kart rozeti (ör. "Orta") VE mini
+    // dairedeki etiket artık İKİSİ de aynı getEfektifPerfSeviye sonucundan
+    // geliyor. Eskiden ikisi ayrı ayrı, farklı %-eşiği fonksiyonlarından
+    // (getPerformanceClass) hesaplanıyordu — hem Dashboard'dan hem BİRBİRİNDEN
+    // farklı seviye gösterebiliyorlardı. "Fark Yaratan" etiketi de artık
+    // burada otomatik görünür (450+ adet/gün olanlar için).
+    const _efektifCard = getEfektifPerfSeviye(row, performans);
+    const performansClass = _efektifCard.cls;
     const cm = perfColorMap[performansClass] || perfColorMap['perf-verypoor'];
     const _hpDuz = _oranDuzeltilmis(row);
     const vPerfDisplay = _hpDuz !== null && _hpDuz !== undefined
       ? Math.round(_hpDuz * (100 / hedef)) : null;
-    const vPerfClass = vPerfDisplay === null ? '' : getPerformanceClass(vPerfDisplay);
-    const vcm = perfColorMap[vPerfClass] || cm;
+    const vcm = cm; // aynı kaynak — hedef sadece gösterilen %'yi etkiler, seviyeyi değil (Dashboard ile tutarlı)
     const tarihDurumu = (row.tarihBasariliKayit || 0) > 0
       ? `<span style="color:var(--green)">✅ ${row.tarihBasariliKayit}/${row.kayit}</span>`
       : `<span style="color:var(--amber)">⚠️ Tarih yok</span>`;
@@ -5578,7 +5584,7 @@ function renderPerfTabloFromData(page) {
           <div style="font-size:10px;color:var(--muted);margin-top:1px;">${row.gunSayisi || 0} gün · ${tarihDurumu}${azVeriMi(row.gunSayisi) ? ' ' + azVeriRozetiHtml('inline') : ''}</div>
           <div style="margin-top:5px;">
             <span style="font-size:9px;font-weight:700;background:${cm.badge};color:${cm.badgeTxt};
-              padding:2px 7px;border-radius:8px;letter-spacing:.4px;">${cm.label}</span>
+              padding:2px 7px;border-radius:8px;letter-spacing:.4px;">${_efektifCard.label}</span>
           </div>
         </div>
         <!-- Mini performans daire — sadece Düz. Performans -->
@@ -5590,7 +5596,7 @@ function renderPerfTabloFromData(page) {
             <div style="width:46px;height:46px;border-radius:50%;background:#fff;
               display:flex;flex-direction:column;align-items:center;justify-content:center;
               box-shadow:inset 0 1px 3px rgba(0,0,0,.07);" title="${displayPerf}%">
-              <div style="font-size:8.5px;font-weight:800;color:${displayCm.accent};line-height:1.15;text-align:center;padding:0 2px;letter-spacing:.2px;">${displayCm.label}</div>
+              <div style="font-size:8.5px;font-weight:800;color:${displayCm.accent};line-height:1.15;text-align:center;padding:0 2px;letter-spacing:.2px;">${_efektifCard.label}</div>
             </div>
           </div>
         </div>
@@ -5660,17 +5666,29 @@ function renderPerfTabloFromData(page) {
         </div>
         <!-- Özet stat kutuları -->
         <div style="display:flex;gap:10px;flex-shrink:0;">
-          ${[
-            ['👍',(translations[currentLang]||translations.tr).perf_good,performansData.filter(r=>(r.genelHizPerf??0)>=85).length,'var(--blue)','var(--lblue2)'],
-            ['⚠️',(translations[currentLang]||translations.tr).perf_average,performansData.filter(r=>{const p=r.genelHizPerf??0;return p>=70&&p<85}).length,'var(--amber)','var(--lamber)'],
-            ['🔻',(translations[currentLang]||translations.tr).perf_weak,performansData.filter(r=>{const p=r.genelHizPerf??0;return p>=50&&p<70}).length,'#EF5350','#FFEBEE'],
-            ['📉',(translations[currentLang]||translations.tr).perf_verypoor,performansData.filter(r=>(r.genelHizPerf??0)<50).length,'#B71C1C','#FFCDD2']
-          ].map(([ic,lb,cnt,col,bg])=>`
-            <div style="background:${bg};border:1px solid ${col}33;border-radius:10px;padding:10px 14px;text-align:center;min-width:54px;">
-              <div style="font-size:16px;">${ic}</div>
-              <div style="font-size:18px;font-weight:800;color:${col};font-family:'DM Mono',monospace;line-height:1;">${cnt}</div>
-              <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">${lb}</div>
-            </div>`).join('')}
+          ${(() => {
+            // Panelin GENELİNDEKİ TEK doğru kaynak (getEfektifPerfSeviye —
+            // Mesaisiz Günlük Ort. adet bazlı) kullanılıyor; eskiden burada
+            // ayrı bir % eşiği (genelHizPerf ≥85/70/50) vardı ve bu, aynı
+            // 89 inspector için Dashboard'daki sayaçlardan (26/14/32/17)
+            // FARKLI sayılar göstermesine yol açıyordu.
+            const sayaclar = { good: 0, average: 0, weak: 0, verypoor: 0 };
+            performansData.forEach(r => {
+              const cls = getEfektifPerfSeviye(r, r.genelHizPerf ?? 0).cls.replace('perf-', '');
+              if (sayaclar[cls] !== undefined) sayaclar[cls]++;
+            });
+            return [
+              ['👍',(translations[currentLang]||translations.tr).perf_good,sayaclar.good,'var(--blue)','var(--lblue2)'],
+              ['⚠️',(translations[currentLang]||translations.tr).perf_average,sayaclar.average,'var(--amber)','var(--lamber)'],
+              ['🔻',(translations[currentLang]||translations.tr).perf_weak,sayaclar.weak,'#EF5350','#FFEBEE'],
+              ['📉',(translations[currentLang]||translations.tr).perf_verypoor,sayaclar.verypoor,'#B71C1C','#FFCDD2']
+            ].map(([ic,lb,cnt,col,bg])=>`
+              <div style="background:${bg};border:1px solid ${col}33;border-radius:10px;padding:10px 14px;text-align:center;min-width:54px;">
+                <div style="font-size:16px;">${ic}</div>
+                <div style="font-size:18px;font-weight:800;color:${col};font-family:'DM Mono',monospace;line-height:1;">${cnt}</div>
+                <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">${lb}</div>
+              </div>`).join('');
+          })()}
         </div>
       </div>
     </div>
