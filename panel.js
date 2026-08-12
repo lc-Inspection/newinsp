@@ -693,6 +693,9 @@ function _bugununTarihiYerel() {
 // Teknik İnceleme bölümüne giriş yapan kullanıcıların ikinci hedefi: günlük
 // belirli sayıda "ikinci inspection" kaydı girmeleri gerekiyor.
 let ikinciInspectionData = []; // { id, siparisKodu, inspector, ekipYoneticisi, talepNo, talepMiktari, sonuc, notAlani, tarih, degerlendiren, savedAt }
+// Admin'in İkinci Inspection tablosunda seçtiği kayıtların id'leri — sayfa
+// değiştirse bile (yeniden render'da) SEÇİM KAYBOLMASIN diye global tutulur.
+const _iiSeciliKayitlar = new Set();
 // Teknik İnceleme hedefleri (admin tarafından ayarlanır) — varsayılan: günlük
 // 3 teknik değerlendirme, günlük 5 ikinci inspection.
 let teknikHedefler = { teknikDegerlendirmeGunluk: 3, ikinciInspectionGunluk: 5, baslangicTarihi: '' };
@@ -11104,12 +11107,22 @@ function renderIkinciInspectionTablo() {
   if (iiKayitSayfa > toplamSayfa) iiKayitSayfa = toplamSayfa;
   const sayfaBaslangic = (iiKayitSayfa - 1) * TI_SAYFA_BOYUTU;
   const sayfaSatirlari = satirlar.slice(sayfaBaslangic, sayfaBaslangic + TI_SAYFA_BOYUTU);
+
+  // Silme (checkbox ile tek/çoklu seçim) SADECE admin'e gösterilir — başka
+  // hiçbir kullanıcı için tabloya tek bir piksel bile eklenmez.
+  const isAdmin = !currentUser || currentUser.isAdmin;
+
   const rows = sayfaSatirlari.map(r => {
     const gecti = r.sonuc === 'Geçti';
     const durumHtml = gecti
       ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7;border-radius:99px;font-size:11px;font-weight:700">✅ Geçti</span>`
       : `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 9px;background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;border-radius:99px;font-size:11px;font-weight:700">❌ Kaldı</span>`;
+    const idAttr = String(r.id).replace(/'/g, "\\'");
+    const checkboxTd = isAdmin
+      ? `<td style="padding:7px 10px;width:30px"><input type="checkbox" class="ii-row-cb" data-id="${_escapeHtml(String(r.id))}" ${_iiSeciliKayitlar.has(String(r.id)) ? 'checked' : ''} onchange="toggleIiKayitSecim('${idAttr}', this.checked)" style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue2)"></td>`
+      : '';
     return `<tr>
+      ${checkboxTd}
       <td style="padding:7px 10px;font-size:12px;color:var(--muted2);font-family:'DM Mono',monospace">${_escapeHtml(r.siparisKodu || '—')}</td>
       <td style="padding:7px 10px;font-size:12px;color:var(--navy);font-weight:500">${_escapeHtml(_formatDisplayName(r.inspector))}</td>
       <td style="padding:7px 10px;font-size:12px;color:var(--muted2)">${_escapeHtml(_formatDisplayName(r.ekipYoneticisi || '—'))}</td>
@@ -11121,12 +11134,30 @@ function renderIkinciInspectionTablo() {
       <td style="padding:7px 10px;font-size:11.5px;color:var(--muted)">${_escapeHtml(_formatDisplayName(r.degerlendiren || '—'))}</td>
     </tr>`;
   }).join('');
+
+  // Bu sayfadaki tüm satırlar seçiliyse "tümünü seç" kutusu da işaretli görünsün
+  const sayfaTumuSecili = isAdmin && sayfaSatirlari.length > 0 && sayfaSatirlari.every(r => _iiSeciliKayitlar.has(String(r.id)));
+  const checkboxTh = isAdmin
+    ? `<th style="padding:7px 10px;width:30px"><input type="checkbox" id="ii-select-all-cb" ${sayfaTumuSecili ? 'checked' : ''} onchange="toggleIiKayitSecimSayfa(this.checked)" style="width:15px;height:15px;cursor:pointer;accent-color:var(--blue2)"></th>`
+    : '';
+  const secimAracCubugu = isAdmin
+    ? `<div id="ii-secim-toolbar" style="display:${_iiSeciliKayitlar.size > 0 ? 'flex' : 'none'};align-items:center;justify-content:space-between;background:#FFF3E0;border:1px solid #FFCC80;border-radius:8px;padding:8px 14px;margin-bottom:10px">
+        <span style="font-size:12.5px;font-weight:700;color:#7b4f00"><span id="ii-secim-sayisi">${_iiSeciliKayitlar.size}</span> kayıt seçili</span>
+        <div style="display:flex;gap:8px">
+          <button type="button" onclick="iiSeciliKayitlariTemizle()" style="border:1px solid #DCE3EE;background:#fff;color:var(--muted);border-radius:6px;padding:5px 12px;cursor:pointer;font-size:11.5px;font-weight:600">Seçimi Kaldır</button>
+          <button type="button" onclick="iiSeciliKayitlariSil()" style="border:none;background:var(--red);color:#fff;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:11.5px;font-weight:700">🗑️ Seçilenleri Sil</button>
+        </div>
+      </div>`
+    : '';
+
   wrap.innerHTML = `
     <div style="margin-bottom:10px;font-size:12px;color:var(--muted2)">
       <strong style="color:var(--navy)">${geciSayisiToplam}</strong> / ${satirlar.length} kayıt "Geçti"
     </div>
+    ${secimAracCubugu}
     <table style="width:100%;border-collapse:collapse">
     <thead><tr style="border-bottom:2px solid var(--border2)">
+      ${checkboxTh}
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Sipariş Kodu</th>
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Inspector</th>
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Ekip Yöneticisi</th>
@@ -11140,6 +11171,68 @@ function renderIkinciInspectionTablo() {
     <tbody>${rows}</tbody>
   </table>
   ${_tiSayfalamaHtml(iiKayitSayfa, toplamSayfa, 'iiKayitOncekiSayfa', 'iiKayitSonrakiSayfa')}`;
+}
+
+// ── İkinci Inspection: Kayıt Seçimi (admin-only, sayfalar arası kalıcı) ───
+function toggleIiKayitSecim(id, checked) {
+  if (checked) _iiSeciliKayitlar.add(String(id)); else _iiSeciliKayitlar.delete(String(id));
+  _iiSecimUiGuncelle();
+}
+function toggleIiKayitSecimSayfa(checked) {
+  document.querySelectorAll('.ii-row-cb').forEach(cb => {
+    cb.checked = checked;
+    if (checked) _iiSeciliKayitlar.add(cb.dataset.id); else _iiSeciliKayitlar.delete(cb.dataset.id);
+  });
+  _iiSecimUiGuncelle();
+}
+function iiSeciliKayitlariTemizle() {
+  _iiSeciliKayitlar.clear();
+  renderIkinciInspectionTablo();
+}
+// Sadece araç çubuğunu/sayaçları güncelle — tüm tabloyu yeniden çizip sayfa
+// kaydırma pozisyonunu bozmamak için (checkbox tıklandıkça tam re-render
+// yapmıyoruz, sadece toolbar'ı gösterip sayacı tazeliyoruz).
+function _iiSecimUiGuncelle() {
+  const toolbar = document.getElementById('ii-secim-toolbar');
+  const sayac = document.getElementById('ii-secim-sayisi');
+  if (toolbar) toolbar.style.display = _iiSeciliKayitlar.size > 0 ? 'flex' : 'none';
+  if (sayac) sayac.textContent = _iiSeciliKayitlar.size;
+  const selectAllCb = document.getElementById('ii-select-all-cb');
+  if (selectAllCb) {
+    const sayfaCb = Array.from(document.querySelectorAll('.ii-row-cb'));
+    selectAllCb.checked = sayfaCb.length > 0 && sayfaCb.every(cb => _iiSeciliKayitlar.has(cb.dataset.id));
+  }
+}
+async function iiSeciliKayitlariSil() {
+  const idler = Array.from(_iiSeciliKayitlar);
+  if (!idler.length) return;
+  if (!confirm(`⚠️ Seçili ${idler.length} kayıt kalıcı olarak silinecek!\n\nBu işlem geri alınamaz. Emin misiniz?`)) return;
+
+  const sifre = prompt('Devam etmek için admin şifresini girin:');
+  if (sifre === null) return;
+
+  try {
+    const res = await fetch(PHP_PERFORMANS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'deleteIkinciInspectionKayitlar', token: DEFAULT_API_TOKEN, sifre, ids: idler })
+    });
+    const resp = await res.json();
+    if (!resp || resp.status !== 'ok') {
+      alert('❌ ' + (resp?.message || 'Silme işlemi başarısız oldu.'));
+      return;
+    }
+    // Yerel veriden de kaldır ve tabloyu tazele
+    const silinenSet = new Set(idler);
+    ikinciInspectionData = ikinciInspectionData.filter(r => !silinenSet.has(String(r.id)));
+    try { localStorage.setItem('lc_ikinci_inspection_cache', JSON.stringify(ikinciInspectionData)); } catch(e) {}
+    _iiSeciliKayitlar.clear();
+    renderIkinciInspectionTablo();
+    if (typeof renderTiDashboard === 'function') renderTiDashboard();
+    alert(`✅ ${resp.count ?? idler.length} kayıt silindi.`);
+  } catch (err) {
+    alert('❌ Silme sırasında hata oluştu: ' + err.message);
+  }
 }
 
 // ─── Teknik İnceleme Dashboard (kullanıcı talebiyle eklendi) ───
