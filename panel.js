@@ -186,6 +186,7 @@ const translations = {
     perf_average:         'Orta',
     perf_poor:            'Zayıf',
     perf_weak:            'Gelişime Açık',
+    perf_farkyaratan:     'Fark Yaratan',
     perf_verypoor:        'Zayıf',
     stat_total_product2:  'TOPLAM ADET',
     std_duration_label:   'STANDART SÜRE',
@@ -3128,6 +3129,14 @@ function getEfektifPerfSeviye(inspector, performansVal) {
     cls = 'perf-verypoor';  label = t.perf_verypoor;
   }
 
+  // "İyi" (≥400 adet/gün) skalası içinde 450'den BÜYÜK olanlar ayrıca
+  // "Fark Yaratan" olarak öne çıkarılır — cls (ve dolayısıyla renk) İyi ile
+  // aynı kalır (panelin dört renkli sistemi bozulmasın diye), sadece
+  // gösterilen ETİKET değişir. farkYaratan bayrağı, isteyen yerlerde ayrıca
+  // rozet/ikon eklemek için de kullanılabilir.
+  const farkYaratan = gunlukOrtNormal > 450;
+  if (farkYaratan) label = t.perf_farkyaratan;
+
   // ── YENİ: ADET BAZLI PERFORMANS % ────────────────────────────────────
   // Gösterilen "PERFORMANS %" artık Verimlilik Perf formülü yerine doğrudan
   // Mesaisiz Günlük Ort. ÷ Günlük Hedef Adet × 100 olarak hesaplanıyor.
@@ -3141,6 +3150,7 @@ function getEfektifPerfSeviye(inspector, performansVal) {
   return {
     cls,
     label,
+    farkYaratan,
     demoted: false, // artık "yüzde düşürme" kavramı yok, kategori doğrudan adetten geliyor
     gunlukOrtNormal,
     adetBazliPerf
