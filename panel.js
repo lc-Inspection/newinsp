@@ -593,10 +593,16 @@ const DEPO_ANALIZ_ALIAS = {
 };
 function _depoAnalizAdiNormalize(ham) {
   // Fazla/çift boşlukları teke indir, baş/son boşlukları temizle, SONRA
-  // Türkçe kurallarına göre büyük harfe çevir (i → İ) — yoksa "Dir"/"Tamir"
-  // gibi kelimeler alias tablosuyla eşleşmez.
-  const anahtar = String(ham || '').replace(/\s+/g, ' ').trim().toLocaleUpperCase('tr-TR');
-  return DEPO_ANALIZ_ALIAS[anahtar] || String(ham || '').replace(/\s+/g, ' ').trim();
+  // Türkçe kurallarına göre büyük harfe çevir (i → İ). DİKKAT — bu ikisi
+  // AYNI ŞEY DEĞİL: toLocaleUpperCase('tr-TR') sadece KÜÇÜK harf "i"yi
+  // "İ"ye çevirir; Excel'de kaynak veri ZATEN büyük harfle "AKSARAY DIR
+  // DEPO" (ASCII I ile) yazılmışsa toLocaleUpperCase bu I'yı DEĞİŞTİRMEZ,
+  // "İ"ye çevirmez — bu yüzden alias tablosundaki "İ"li anahtarla sessizce
+  // eşleşmiyordu (gerçek hata buydu). Çözüm: büyük harfe çevirdikten SONRA
+  // kalan tüm ASCII "I" harflerini de elle "İ"ye çeviriyoruz.
+  const temiz = String(ham || '').replace(/\s+/g, ' ').trim();
+  const anahtar = temiz.toLocaleUpperCase('tr-TR').replace(/I/g, 'İ');
+  return DEPO_ANALIZ_ALIAS[anahtar] || temiz;
 }
 
 // Set nesneleri doğrudan JSON'a çevrilemediği için sunucuya göndermeden
