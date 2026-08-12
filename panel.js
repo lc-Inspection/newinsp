@@ -3348,11 +3348,18 @@ async function ceyrekVerisiGonder(event) {
     const tekniknesne = getTeknikIncelemeSkorForInspector(insp.ins);
     const teknikSkor = tekniknesne.count > 0 ? tekniknesne.percent : null;
 
+    // Günlük Ort. (Normal Saatte) — Dashboard kartındaki BİREBİR aynı formül
+    // (toplamAdetGercek - toplamOvertimeAdet) / gunSayısı.
+    const _gunSayisiCeyrek = insp.gunSayisi || 0;
+    const _normalAdetCeyrek = (insp.toplamAdetGercek ?? insp.adet ?? 0) - (insp.toplamOvertimeAdet || 0);
+    const gunlukOrtNormal = _gunSayisiCeyrek > 0 ? Math.round(_normalAdetCeyrek / _gunSayisiCeyrek) : null;
+
     // SADECE o anki çeyreğin hücresi yazılır — diğer çeyrekler dokunulmaz
     ceyrekArsivi[key][suankiCeyrek] = {
       verimlilik: verimlilik !== null && verimlilik !== undefined ? verimlilik : null,
       ikinciInsp: ikinciInsp,
       teknikSkor: teknikSkor,
+      gunlukOrtNormal: gunlukOrtNormal,
       tarih: simdi
     };
   });
@@ -3388,6 +3395,7 @@ function _ceyrekMetrikHucre(veri) {
       <div><span style="color:var(--muted)">Verimlilik:</span> <strong style="font-size:14px;color:${vRenk}"${vTitle}>${vMetin}</strong></div>
       <div><span style="color:var(--muted)">İkinci Insp.:</span> <strong style="font-size:14px;color:${renk(veri.ikinciInsp)}">${veri.ikinciInsp !== null && veri.ikinciInsp !== undefined ? veri.ikinciInsp + '%' : '—'}</strong></div>
       <div><span style="color:var(--muted)">Teknik Skor:</span> <strong style="font-size:14px;color:${renk(veri.teknikSkor)}">${veri.teknikSkor !== null && veri.teknikSkor !== undefined ? veri.teknikSkor + '%' : '—'}</strong></div>
+      <div><span style="color:var(--muted)">Günlük Ort. (Normal):</span> <strong style="font-size:14px;color:var(--navy)">${veri.gunlukOrtNormal !== null && veri.gunlukOrtNormal !== undefined ? formatTR(veri.gunlukOrtNormal) + ' adet' : '—'}</strong></div>
     </div>`;
 }
 
@@ -3648,6 +3656,8 @@ function exportCeyrekArsiviToExcel() {
     const QC = ['Q1', 'Q2', 'Q3', 'Q4'];
     const QLABEL = { Q1: 'Q1 (Şub-Mar-Nis)', Q2: 'Q2 (May-Haz-Tem)', Q3: 'Q3 (Ağu-Eyl-Eki)', Q4: 'Q4 (Kas-Ara-Oca)' };
     const fmtV = v => (v === null || v === undefined) ? '—' : v + '%';
+    // Günlük Ort. (Normal Saatte) bir adet değeri — % değil, sonuna "adet" eklenir.
+    const fmtAdet = v => (v === null || v === undefined) ? '—' : formatTR(v) + ' adet';
     // Verimlilik artık Excel'de de ekrandaki gibi İyi/Orta/Gelişime Açık/Zayıf
     // etiketiyle gösteriliyor — ham yüzde değil.
     const fmtVSeviye = v => {
@@ -3690,14 +3700,15 @@ function exportCeyrekArsiviToExcel() {
         row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.verimlilik) : '—';
         row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
         row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
+        row[`${q} Günlük Ort. (Normal)`] = v ? fmtAdet(v.gunlukOrtNormal) : '—';
       });
       return row;
     });
     const wsTum = XLSX.utils.json_to_sheet(tumRows);
     wsTum['!cols'] = [{ wch: 24 }, { wch: 16 }, { wch: 15 }].concat(
-      QC.flatMap(() => [{ wch: 14 }, { wch: 14 }, { wch: 14 }])
+      QC.flatMap(() => [{ wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 }])
     );
-    _ceyrekExcelStyleSheet(wsTum, 3 + QC.length * 3, tumRows.length, R => {
+    _ceyrekExcelStyleSheet(wsTum, 3 + QC.length * 4, tumRows.length, R => {
       const seviye = zenginlestirilmis[R - 1]?.ref?.seviye;
       return seviye ? seviye.bg : 'F0F0F0';
     });
@@ -3729,19 +3740,20 @@ function exportCeyrekArsiviToExcel() {
           row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.verimlilik) : '—';
           row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
           row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
+          row[`${q} Günlük Ort. (Normal)`] = v ? fmtAdet(v.gunlukOrtNormal) : '—';
         });
         return row;
       });
 
       const bosSatir = { 'Inspector': 'Bu seviyede inspector bulunamadı', 'Referans Çeyrek': '' };
-      QC.forEach(q => { bosSatir[`${q} Verimlilik`] = ''; bosSatir[`${q} İkinci Insp.`] = ''; bosSatir[`${q} Teknik Skor`] = ''; });
+      QC.forEach(q => { bosSatir[`${q} Verimlilik`] = ''; bosSatir[`${q} İkinci Insp.`] = ''; bosSatir[`${q} Teknik Skor`] = ''; bosSatir[`${q} Günlük Ort. (Normal)`] = ''; });
 
       const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [bosSatir]);
       ws['!cols'] = [{ wch: 24 }, { wch: 16 }].concat(
-        QC.flatMap(() => [{ wch: 14 }, { wch: 14 }, { wch: 14 }])
+        QC.flatMap(() => [{ wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 18 }])
       );
       const bg = { iyi: 'E3F2FD', orta: 'FFF8E1', acik: 'FFEBEE', zayif: 'FFEBEE' }[kat.key];
-      _ceyrekExcelStyleSheet(ws, 2 + QC.length * 3, rows.length || 1, () => bg);
+      _ceyrekExcelStyleSheet(ws, 2 + QC.length * 4, rows.length || 1, () => bg);
       XLSX.utils.book_append_sheet(wb, ws, kat.ad.length > 31 ? kat.ad.slice(0, 31) : kat.ad);
     });
 
