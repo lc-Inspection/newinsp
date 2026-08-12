@@ -881,7 +881,7 @@ function _pwaShowInstallGuide(msg) {
   var otSn    = insp.toplamMesaistiSaniye || 0;
   var mesaiSn = insp.mesaiSure || 0;
   var stdSn   = insp.standartSure || 0;
-  var totalAdet = insp.adet || 0;
+  var totalAdet = insp.toplamAdetGercek != null ? insp.toplamAdetGercek : (insp.adet || 0);
 
   // OT süresini formatla
   function fmtSn(sn) {
