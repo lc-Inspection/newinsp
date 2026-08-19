@@ -3406,10 +3406,12 @@ function _ceyrekMetrikHucre(veri) {
   const renk = (v, tersMi) => v === null || v === undefined ? 'var(--muted2)'
     : (v >= 85 ? '#00897B' : v >= 70 ? '#F57F17' : v >= 50 ? '#EF5350' : '#B71C1C');
   // Verimlilik artık % yerine panel genelindeki İyi/Orta/Gelişime Açık/Zayıf
-  // etiketiyle gösteriliyor (bkz. _ceyrekSeviyeFromVerimlilik) — fareyle
-  // üzerine gelince ham yüzde tooltip'te görünür.
-  const vSeviye = (veri.verimlilik !== null && veri.verimlilik !== undefined && typeof _ceyrekSeviyeFromVerimlilik === 'function')
-    ? _ceyrekSeviyeFromVerimlilik(veri.verimlilik) : null;
+  // etiketiyle gösteriliyor — ama artık DOĞRUDAN mutlak adete (gunlukOrtNormal)
+  // göre, kişiye özel hedeften etkilenen % değerine göre DEĞİL (bkz.
+  // _ceyrekSeviyeFromVerimlilik'teki not). Fareyle üzerine gelince hâlâ ham
+  // yüzde tooltip'te görünür.
+  const vSeviye = (veri.gunlukOrtNormal !== null && veri.gunlukOrtNormal !== undefined && typeof _ceyrekSeviyeFromVerimlilik === 'function')
+    ? _ceyrekSeviyeFromVerimlilik(veri.gunlukOrtNormal) : null;
   const vMetin = vSeviye ? vSeviye.label : '—';
   const vRenk  = vSeviye ? '#' + vSeviye.color : 'var(--muted2)';
   const vTitle = (veri.verimlilik !== null && veri.verimlilik !== undefined) ? ` title="${veri.verimlilik}%"` : '';
@@ -3526,17 +3528,22 @@ function changeCeyrekSayfa(delta) {
 // hesaplanır (yani en güncel bilinen durum). Rapor: bir "Özet" sayfası,
 // tüm çeyreklerin göründüğü bir "Tüm Veriler" sayfası, ve her seviye için
 // AYRI birer sayfa (İyi / Orta / Gelişime Açık / Zayıf) içerir.
-function _ceyrekSeviyeFromVerimlilik(v) {
-  // ceyrekArsivi'ndeki 'verimlilik' değeri zaten adet-bazlı % olarak
-  // saklanıyor (getEfektifPerfSeviye(...).adetBazliPerf — 450/gün hedefine
-  // göre). Aynı fonksiyonun eşiklerinin (Fark Yaratan >450, İyi 400-450,
-  // Orta 360-399, Gelişime Açık 300-359, Zayıf <300 adet/gün) % karşılığı:
-  // >450 → >%100, 400/450≈%89, 360/450=%80, 300/450≈%67.
-  if (v === null || v === undefined) return null;
-  if (v > 100) return { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE' };
-  if (v >= 89) return { key: 'iyi',    label: 'İyi',           color: '2563EB', bg: 'E3F2FD' };
-  if (v >= 80) return { key: 'orta',   label: 'Orta',          color: 'F57F17', bg: 'FFF8E1' };
-  if (v >= 67) return { key: 'acik',   label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE' };
+function _ceyrekSeviyeFromVerimlilik(g) {
+  // DİKKAT — bu fonksiyon artık YÜZDE değil, DOĞRUDAN "Günlük Ort. (Normal
+  // Saatte)" adedini (mutlak sayı) alır. Eskiden saklanan 'verimlilik'
+  // yüzdesi (adetBazliPerf) kullanılıyordu, ama bu yüzde kişinin ÖZEL
+  // hedefine (inspector.hedefAdetGunluk) göre hesaplanıyor — hedefi 450'den
+  // farklı olan biri için, aynı adet farklı bir yüzdeye denk gelip panelin
+  // GENELİNDEKİ mutlak eşiklerden (getEfektifPerfSeviye: 400/360/300
+  // adet/gün) FARKLI bir kategoriye düşebiliyordu (ör. 390 adet/gün,
+  // hedefi 440 olan biri için Dashboard'da "Orta" iken Çeyrek Arşivi'nde
+  // "İyi" görünüyordu). Artık ikisi de AYNI mutlak eşiği kullanıyor —
+  // tutarsızlık imkansız hale geldi.
+  if (g === null || g === undefined) return null;
+  if (g > 450)  return { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE' };
+  if (g >= 400) return { key: 'iyi',    label: 'İyi',           color: '2563EB', bg: 'E3F2FD' };
+  if (g >= 360) return { key: 'orta',   label: 'Orta',          color: 'F57F17', bg: 'FFF8E1' };
+  if (g >= 300) return { key: 'acik',   label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE' };
   return              { key: 'zayif',  label: 'Zayıf',         color: 'B71C1C', bg: 'FFEBEE' };
 }
 
@@ -3549,7 +3556,7 @@ function _ceyrekReferansSeviye(kayit) {
     const q = siraQ[(startIdx - i + 4) % 4];
     const veri = kayit[q];
     if (veri && veri.verimlilik !== null && veri.verimlilik !== undefined) {
-      return { ceyrek: q, veri, seviye: _ceyrekSeviyeFromVerimlilik(veri.verimlilik) };
+      return { ceyrek: q, veri, seviye: _ceyrekSeviyeFromVerimlilik(veri.gunlukOrtNormal) };
     }
   }
   return { ceyrek: null, veri: null, seviye: null };
@@ -3684,10 +3691,11 @@ function exportCeyrekArsiviToExcel() {
     // Günlük Ort. (Normal Saatte) bir adet değeri — % değil, sonuna "adet" eklenir.
     const fmtAdet = v => (v === null || v === undefined) ? '—' : formatTR(v) + ' adet';
     // Verimlilik artık Excel'de de ekrandaki gibi İyi/Orta/Gelişime Açık/Zayıf
-    // etiketiyle gösteriliyor — ham yüzde değil.
-    const fmtVSeviye = v => {
-      if (v === null || v === undefined) return '—';
-      const s = _ceyrekSeviyeFromVerimlilik(v);
+    // etiketiyle gösteriliyor — ham yüzde değil, VE artık mutlak adete
+    // (gunlukOrtNormal) göre, kişiye özel hedeften bağımsız.
+    const fmtVSeviye = g => {
+      if (g === null || g === undefined) return '—';
+      const s = _ceyrekSeviyeFromVerimlilik(g);
       return s ? s.label : '—';
     };
 
@@ -3723,7 +3731,7 @@ function exportCeyrekArsiviToExcel() {
       };
       QC.forEach(q => {
         const v = k[q];
-        row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.verimlilik) : '—';
+        row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.gunlukOrtNormal) : '—';
         row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
         row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
         row[`${q} Günlük Ort. (Normal)`] = v ? fmtAdet(v.gunlukOrtNormal) : '—';
@@ -3764,7 +3772,7 @@ function exportCeyrekArsiviToExcel() {
         };
         QC.forEach(q => {
           const v = k[q];
-          row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.verimlilik) : '—';
+          row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.gunlukOrtNormal) : '—';
           row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
           row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
           row[`${q} Günlük Ort. (Normal)`] = v ? fmtAdet(v.gunlukOrtNormal) : '—';
