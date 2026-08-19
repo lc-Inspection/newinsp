@@ -107,7 +107,8 @@ const translations = {
     // Summary stats
     stat_total_inspector: 'Toplam Inspector',
     stat_excellent:       'Mükemmel (≥95%)',
-    stat_good:            'İyi (≥400 adet/gün)',
+    stat_farkyaratan:     'Fark Yaratan (>450 adet/gün)',
+    stat_good:            'İyi (400-450 adet/gün)',
     stat_average:         'Orta (360-399 adet/gün)',
     stat_poor:            'Gelişime Açık (300-359 adet/gün)',
     stat_verypoor:        'Zayıf (<300 adet/gün)',
@@ -3197,9 +3198,16 @@ function updateSummaryStats(inspectors) {
   // Performans seviyeleri artık TAMAMEN Mesaisiz Günlük Ort. (adet) bazlı —
   // bkz. getEfektifPerfSeviye(). Verimlilik Perf (%) hesabı değişmedi, sadece
   // hangi kutuya girileceğine artık % değil ham üretim adedi karar veriyor.
+  // "Fark Yaratan" (450+ adet/gün) artık "İyi" kutusunun İÇİNDE değil, AYRI
+  // bir kutuda sayılıyor — good, SADECE 400-450 arası olanları içerir.
   const good = inspectors.filter(i => {
     const p = getPerfVal(i);
-    return getEfektifPerfSeviye(i, p).cls === 'perf-good';
+    const ef = getEfektifPerfSeviye(i, p);
+    return ef.cls === 'perf-good' && !ef.farkYaratan;
+  }).length;
+  const farkYaratan = inspectors.filter(i => {
+    const p = getPerfVal(i);
+    return getEfektifPerfSeviye(i, p).farkYaratan;
   }).length;
   const average = inspectors.filter(i => {
     const p = getPerfVal(i);
@@ -3228,6 +3236,7 @@ function updateSummaryStats(inspectors) {
   const totalProducts = inspectors.reduce((sum, i) => sum + (i.adet || 0), 0);
 
   document.getElementById('good-count').textContent = good;
+  if (document.getElementById('farkyaratan-count')) document.getElementById('farkyaratan-count').textContent = farkYaratan;
   document.getElementById('average-count').textContent = average;
   document.getElementById('poor-count').textContent = poor;
   if (document.getElementById('verypoor-count')) document.getElementById('verypoor-count').textContent = veryPoor;
@@ -3809,10 +3818,11 @@ function exportCeyrekArsiviToExcel() {
 // oranı ile birlikte tablo halinde gösterir.
 // ─────────────────────────────────────────────
 const PERF_SEVIYE_TANIM = {
-  good:      { label: 'İyi (≥400 adet/gün)',              icon: '👍', min: 98,  max: Infinity, color: 'var(--blue)'  },
-  average:   { label: 'Orta (360-399 adet/gün)',           icon: '⚠️', min: 88,  max: 98,       color: 'var(--amber)' },
-  weak:      { label: 'Gelişime Açık (300-359 adet/gün)',  icon: '🔻', min: 73,  max: 88,       color: '#EF5350'      },
-  verypoor:  { label: 'Zayıf (<300 adet/gün)',             icon: '📉', min: -Infinity, max: 73, color: '#B71C1C'      }
+  farkyaratan: { label: 'Fark Yaratan (>450 adet/gün)',    icon: '🚀', color: '#00ACC1' },
+  good:      { label: 'İyi (400-450 adet/gün)',            icon: '👍', color: 'var(--blue)'  },
+  average:   { label: 'Orta (360-399 adet/gün)',           icon: '⚠️', color: 'var(--amber)' },
+  weak:      { label: 'Gelişime Açık (300-359 adet/gün)',  icon: '🔻', color: '#EF5350'      },
+  verypoor:  { label: 'Zayıf (<300 adet/gün)',             icon: '📉', color: '#B71C1C'      }
 };
 
 
@@ -3835,10 +3845,16 @@ function showPerfSeviyeDetay(seviyeKey) {
   // Bu seviyeye giren inspectorleri filtrele — EFEKTİF seviyeye göre (kart
   // rozetiyle birebir tutarlı olması için): "İyi" eşiğini geçse bile
   // Mesaisiz Günlük Ort. <400 olan biri buraya değil "Orta"ya düşer.
+  // "farkyaratan" ve "good", cls olarak İKİSİ DE 'perf-good' — bu yüzden
+  // burada ayrıca farkYaratan bayrağına bakılarak ikisi birbirinden
+  // ayrıştırılıyor (kutudaki sayaçla popup listesi tutarlı olsun diye).
   const liste = performansData
     .filter(i => {
       const p = getDispPerf(i);
-      const efektifKey = getEfektifPerfSeviye(i, p).cls.replace('perf-', '');
+      const ef = getEfektifPerfSeviye(i, p);
+      const efektifKey = ef.cls.replace('perf-', '');
+      if (seviyeKey === 'farkyaratan') return ef.farkYaratan;
+      if (seviyeKey === 'good') return efektifKey === 'good' && !ef.farkYaratan;
       return efektifKey === seviyeKey;
     })
     .sort((a, b) => getEfektifPerfSeviye(b, b.genelHizPerf || 0).adetBazliPerf - getEfektifPerfSeviye(a, a.genelHizPerf || 0).adetBazliPerf);
@@ -4077,11 +4093,16 @@ function filterInspectors() {
 
   if (perfFilter) {
     filtered = filtered.filter(inspector => {
+      // Artık kutulardaki (üstteki 5 sayaç) İLE AYNI kaynak: getEfektifPerfSeviye
+      // — eskiden burada ayrı, hedef-normalize %-eşiği (85/70/50) vardı ve bu,
+      // "İyi" filtresine tıklayınca üstteki sayaçtan FARKLI kişiler listeleyebiliyordu.
+      const ef = getEfektifPerfSeviye(inspector, inspector.genelHizPerf || 0);
       switch(perfFilter) {
-        case 'good': return inspector.performans >= 85;
-        case 'average': return inspector.performans >= 70 && inspector.performans < 85;
-        case 'poor': return inspector.performans >= 50 && inspector.performans < 70;
-        case 'verypoor': return inspector.performans < 50;
+        case 'farkyaratan': return ef.farkYaratan;
+        case 'good': return ef.cls === 'perf-good' && !ef.farkYaratan;
+        case 'average': return ef.cls === 'perf-average';
+        case 'poor': return ef.cls === 'perf-weak';
+        case 'verypoor': return ef.cls === 'perf-verypoor';
         default: return true;
       }
     });
