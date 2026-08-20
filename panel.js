@@ -3339,14 +3339,28 @@ async function _pushCeyrekArsiviToServer() {
   const token = appConfig.sheetsApiToken;
   if (!url || !token) return;
   try {
-    await fetch(url, {
+    // ÖNEMLİ: eskiden burada mode:'no-cors' + Content-Type:'text/plain'
+    // kullanılıyordu (Apps Script döneminden kalma bir desen). no-cors
+    // modunda tarayıcı CEVABI JS'E HİÇ OKUTMUYOR (opak/görünmez) — yani
+    // sunucu tarafında bir hata olsa bile (yanlış token, format sorunu vb.)
+    // kod bunu ASLA göremiyor, sessizce "başarılı" sanıyordu. _pushDepoAnalizToServer
+    // ile AYNI, kanıtlanmış deseni kullanıyoruz artık: normal (CORS'lu)
+    // fetch + cevabı gerçekten okuyup kontrol etme.
+    const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: 'setCeyrekPerformans', token, veri: ceyrekArsivi }),
-      mode: 'no-cors'
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'setCeyrekPerformans', token, veri: ceyrekArsivi })
     });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const resp = await res.json();
+    if (!resp || resp.status !== 'ok') throw new Error(resp?.message || 'kaydetme hatası');
+    console.log('✅ Çeyrek arşivi sunucuya kaydedildi:', resp.message);
   } catch (e) {
-    console.warn('Çeyrek arşivi kaydetme hatası:', e.message);
+    console.warn('❌ Çeyrek arşivi kaydetme hatası:', e.message);
+    // Artık hatayı sessizce yutmuyoruz — kullanıcı görebilsin diye ayrıca
+    // bir uyarı da gösteriyoruz (ekrandaki tablo zaten güncellenmiş olsa
+    // bile, SUNUCUYA yazmadıysa bunu bilmeleri gerekiyor).
+    alert('⚠️ Çeyrek verisi sunucuya kaydedilirken bir hata oluştu:\n\n' + e.message + '\n\nSayfayı yenilerseniz bu değişiklik kaybolabilir. Lütfen tekrar deneyin veya bağlantınızı kontrol edin.');
   }
 }
 
