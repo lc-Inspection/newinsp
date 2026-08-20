@@ -3546,10 +3546,11 @@ function changeCeyrekSayfa(delta) {
 
 // ── Çeyrek Performans Arşivi: KPI Kart Yazma Yardımcıları ────────────────
 // Excel'de gerçek "kart/tile" UI bileşeni yok — bunu, birleştirilmiş
-// (merge) hücrelere düz renk zemin + büyük/kalın yazı uygulayarak taklit
-// ediyoruz. ÖNEMLİ: birleştirilmiş bir aralıkta zemin rengi sadece SOL ÜST
-// hücreye stil verilirse diğer hücreler beyaz kalır — bu yüzden aralıktaki
-// HER hücreye aynı zemin stilini tek tek yazıyoruz.
+// (merge) hücrelere düz renk zemin + büyük/kalın yazı + çerçeve uygulayarak
+// taklit ediyoruz. ÖNEMLİ: birleştirilmiş bir aralıkta zemin rengi/çerçeve
+// sadece SOL ÜST hücreye verilirse diğer hücreler boş kalır — bu yüzden
+// aralıktaki HER hücreye aynı zemin, kartın sadece dış kenarlarına da
+// çerçeve (border) tek tek yazılıyor (gerçek bir kart/kutu hissi için).
 function _ceyrekKpiSatirYaz(ws, r, c0, colspan, text, opts) {
   opts = opts || {};
   const bg = opts.bg || 'FFFFFF';
@@ -3557,12 +3558,19 @@ function _ceyrekKpiSatirYaz(ws, r, c0, colspan, text, opts) {
   const bold = opts.bold !== false;
   const size = opts.size || 11;
   const align = opts.align || 'center';
+  const kenarRengi = opts.kenarRengi || null; // kartın dış çerçeve rengi (varsa)
   if (colspan > 1) {
     ws['!merges'] = ws['!merges'] || [];
     ws['!merges'].push({ s: { r, c: c0 }, e: { r, c: c0 + colspan - 1 } });
   }
   for (let c = c0; c < c0 + colspan; c++) {
     const ref = XLSX.utils.encode_cell({ r, c });
+    const border = {
+      top:    { style: opts.ustKalin ? 'medium' : 'thin', color: { rgb: (opts.ustKalin && kenarRengi) ? kenarRengi : 'FFFFFF' } },
+      bottom: { style: opts.altKalin ? 'medium' : 'thin', color: { rgb: (opts.altKalin && kenarRengi) ? kenarRengi : 'FFFFFF' } }
+    };
+    if (kenarRengi && c === c0)                     border.left  = { style: 'medium', color: { rgb: kenarRengi } };
+    if (kenarRengi && c === c0 + colspan - 1)        border.right = { style: 'medium', color: { rgb: kenarRengi } };
     ws[ref] = {
       t: 's',
       v: c === c0 ? String(text) : '',
@@ -3570,21 +3578,87 @@ function _ceyrekKpiSatirYaz(ws, r, c0, colspan, text, opts) {
         font: { bold, sz: size, color: { rgb: color } },
         fill: { fgColor: { rgb: bg }, patternType: 'solid' },
         alignment: { horizontal: align, vertical: 'center', wrapText: true },
+        border
+      }
+    };
+  }
+}
+
+// 0-100 arası bir performans değerine göre (İyi/Orta/Gelişime Açık/Zayıf
+// mantığıyla BİREBİR aynı eşikler — bkz. ekrandaki _ceyrekMetrikHucre içindeki
+// renk() fonksiyonu) koyu bir "accent" ve açık bir "light zemin" rengi döner.
+// Kartların başlık/değer renklerini SABİT bir palet yerine gerçek performansa
+// göre dinamik boyamak için kullanılır — böylece göz, tek bakışta iyi/kötü
+// alanları ayırt edebilir.
+function _ceyrekKpiTierRenk(v) {
+  if (v === null || v === undefined) return { accent: '90A4AE', light: 'ECEFF1' };
+  if (v >= 85) return { accent: '00897B', light: 'E0F2F1' }; // teal — iyi
+  if (v >= 70) return { accent: 'F57F17', light: 'FFF8E1' }; // amber — orta
+  if (v >= 50) return { accent: 'EF5350', light: 'FFEBEE' }; // kırmızı — gelişime açık
+  return           { accent: 'B71C1C', light: 'FFCDD2' };    // koyu kırmızı — zayıf
+}
+
+// Kartın altına, verilen yüzdeye göre doldurulmuş küçük bir "mini ilerleme
+// çubuğu" çizer (colspan sütunu segmentlere bölüp doldurulan kısmı accent,
+// boş kısmı nötr gri ile boyar). Yüzde temelli kartlara ekstra görsel
+// vurgu katmak için kullanılır.
+function _ceyrekKpiMiniBarYaz(ws, r, c0, colspan, pct, accentHex) {
+  const doluSegment = pct === null || pct === undefined ? 0 : Math.max(0, Math.min(colspan, Math.round((pct / 100) * colspan)));
+  for (let i = 0; i < colspan; i++) {
+    const c = c0 + i;
+    const ref = XLSX.utils.encode_cell({ r, c });
+    const dolu = i < doluSegment;
+    ws[ref] = {
+      t: 's', v: '',
+      s: {
+        fill: { fgColor: { rgb: dolu ? accentHex : 'DCE3EC' }, patternType: 'solid' },
         border: { top: { style: 'thin', color: { rgb: 'FFFFFF' } }, bottom: { style: 'thin', color: { rgb: 'FFFFFF' } } }
       }
     };
   }
 }
+
 // Bir KPI kartı: koyu renkli başlık satırı + altında bir veya birden fazla
-// açık zeminli metrik satırı. r0/c0 kartın sol üst köşesi, colspan kartın
-// kapladığı sütun sayısı, satirlar ise [{text, size, bold, color}, ...].
-function _ceyrekKpiKartYaz(ws, r0, c0, colspan, baslik, satirlar, accentHex, lightHex) {
-  _ceyrekKpiSatirYaz(ws, r0, c0, colspan, baslik, { bg: accentHex, color: 'FFFFFF', size: 10, bold: true });
+// açık zeminli metrik satırı + (opsiyonel) mini ilerleme çubuğu, hepsinin
+// etrafında kartı çevreleyen tam bir çerçeve (kenarRengi). r0/c0 kartın sol
+// üst köşesi, colspan kartın kapladığı sütun sayısı, satirlar ise
+// [{text, size, bold, color}, ...]. barYuzde verilirse en altta mini bar.
+function _ceyrekKpiKartYaz(ws, r0, c0, colspan, baslik, satirlar, accentHex, lightHex, barYuzde) {
+  const toplamSatir = 1 + satirlar.length + (barYuzde !== undefined ? 1 : 0);
+  _ceyrekKpiSatirYaz(ws, r0, c0, colspan, baslik, {
+    bg: accentHex, color: 'FFFFFF', size: 11, bold: true,
+    kenarRengi: accentHex, ustKalin: true, altKalin: (toplamSatir === 1)
+  });
   satirlar.forEach((s, i) => {
+    const buSatirSonMu = (i === satirlar.length - 1) && barYuzde === undefined;
     _ceyrekKpiSatirYaz(ws, r0 + 1 + i, c0, colspan, s.text, {
-      bg: lightHex, color: s.color || '0B1F3A', size: s.size || 11, bold: s.bold !== false, align: s.align || 'center'
+      bg: lightHex, color: s.color || '0B1F3A', size: s.size || 11, bold: s.bold !== false, align: s.align || 'center',
+      kenarRengi: accentHex, altKalin: buSatirSonMu
     });
   });
+  if (barYuzde !== undefined) {
+    const rBar = r0 + 1 + satirlar.length;
+    _ceyrekKpiMiniBarYaz(ws, rBar, c0, colspan, barYuzde, accentHex);
+    // bar satırının altına da kartı kapatan kalın kenarlık ekle
+    for (let c = c0; c < c0 + colspan; c++) {
+      const ref = XLSX.utils.encode_cell({ r: rBar, c });
+      ws[ref].s.border.bottom = { style: 'medium', color: { rgb: accentHex } };
+      if (c === c0) ws[ref].s.border.left = { style: 'medium', color: { rgb: accentHex } };
+      if (c === c0 + colspan - 1) ws[ref].s.border.right = { style: 'medium', color: { rgb: accentHex } };
+    }
+  }
+}
+
+// Sayfanın kullanılan tüm aralığına açık gri bir zemin döşer — böylece
+// üzerine bindirilen renkli kartlar daha belirgin/"göz alıcı" görünür
+// (beyaz zemine göre çok daha fazla kontrast oluşturur).
+function _ceyrekKpiSayfaZeminiYaz(ws, satirSayisi, kolonSayisi) {
+  for (let r = 0; r < satirSayisi; r++) {
+    for (let c = 0; c < kolonSayisi; c++) {
+      const ref = XLSX.utils.encode_cell({ r, c });
+      if (!ws[ref]) ws[ref] = { t: 's', v: '', s: { fill: { fgColor: { rgb: 'F3F5F9' }, patternType: 'solid' } } };
+    }
+  }
 }
 
 // ── Çeyrek Performans Arşivi: Excel'e Aktar ─────────────────────────────
@@ -3783,40 +3857,56 @@ function exportCeyrekArsiviToExcel() {
       const pctIyiUstu   = toplamInspector ? Math.round((sayac.farkyaratan + sayac.iyi) / toplamInspector * 100) : 0;
       const pctZayifAlti = toplamInspector ? Math.round((sayac.acik + sayac.zayif) / toplamInspector * 100) : 0;
 
+      // Yüzde temelli kartlar artık SABİT renk yerine gerçek performans
+      // seviyesine göre DİNAMİK renkleniyor (iyi=teal, orta=amber, zayıf=kırmızı)
+      // — böylece tablo tek bakışta "nerede sorun var" göstersin.
+      const tV = _ceyrekKpiTierRenk(ortVerimlilik), tI = _ceyrekKpiTierRenk(ortIkinciInsp), tT = _ceyrekKpiTierRenk(ortTeknikSkor);
+
       const genelKartlar = [
-        { baslik: '👥 TOPLAM INSPECTOR',        deger: String(toplamInspector),                        alt: 'aktif kayıt',                              accent: '0B1F3A', light: 'E8EDF5' },
-        { baslik: '⚡ ORT. VERİMLİLİK',          deger: ortVerimlilik  !== null ? ortVerimlilik + '%'  : '—', alt: 'referans çeyrek',                       accent: '1565C0', light: 'E3F2FD' },
-        { baslik: '🔁 ORT. İKİNCİ INSP.',        deger: ortIkinciInsp  !== null ? ortIkinciInsp + '%'  : '—', alt: 'referans çeyrek',                       accent: '00897B', light: 'E0F2F1' },
-        { baslik: '🎯 ORT. TEKNİK SKOR',         deger: ortTeknikSkor  !== null ? ortTeknikSkor + '%'  : '—', alt: 'referans çeyrek',                       accent: 'EF6C00', light: 'FFF3E0' },
-        { baslik: '🚀 İYİ + FARK YARATAN',       deger: pctIyiUstu + '%',                                alt: `${sayac.farkyaratan + sayac.iyi} inspector`,   accent: '00ACC1', light: 'E1F5FE' },
-        { baslik: '📉 ZAYIF + GELİŞİME AÇIK',    deger: pctZayifAlti + '%',                              alt: `${sayac.acik + sayac.zayif} inspector`,        accent: 'B71C1C', light: 'FFEBEE' }
+        { baslik: '👥 TOPLAM INSPECTOR',     deger: String(toplamInspector),                             alt: 'aktif kayıt',                                accent: '0B1F3A', light: 'E1E7F0', bar: undefined },
+        { baslik: '⚡ ORT. VERİMLİLİK',       deger: ortVerimlilik  !== null ? ortVerimlilik + '%'  : '—', alt: 'referans çeyrek',                            accent: tV.accent, light: tV.light, bar: ortVerimlilik },
+        { baslik: '🔁 ORT. İKİNCİ INSP.',     deger: ortIkinciInsp  !== null ? ortIkinciInsp + '%'  : '—', alt: 'referans çeyrek',                            accent: tI.accent, light: tI.light, bar: ortIkinciInsp },
+        { baslik: '🎯 ORT. TEKNİK SKOR',      deger: ortTeknikSkor  !== null ? ortTeknikSkor + '%'  : '—', alt: 'referans çeyrek',                            accent: tT.accent, light: tT.light, bar: ortTeknikSkor },
+        { baslik: '🚀 İYİ + FARK YARATAN',    deger: pctIyiUstu + '%',                                     alt: `${sayac.farkyaratan + sayac.iyi} inspector`, accent: '00897B', light: 'E0F2F1', bar: pctIyiUstu },
+        { baslik: '📉 ZAYIF + GELİŞİME AÇIK', deger: pctZayifAlti + '%',                                   alt: `${sayac.acik + sayac.zayif} inspector`,      accent: 'C62828', light: 'FFEBEE', bar: pctZayifAlti }
       ];
 
       const wsKpi = {};
+      const rowH = {}; // satır yüksekliği haritası — kart görünümünü belirginleştirmek için
+      const setH = (r, h) => { rowH[r] = { hpt: h }; };
+
       let satir = 0;
-      _ceyrekKpiSatirYaz(wsKpi, satir, 0, 11, `📊 Çeyrek Performans Arşivi — KPI Özeti  ·  ${tarihStr}`, { bg: '0B1F3A', color: 'FFFFFF', size: 14, bold: true });
+      setH(satir, 30);
+      _ceyrekKpiSatirYaz(wsKpi, satir, 0, 11, `📊  ÇEYREK PERFORMANS ARŞİVİ — KPI ÖZETİ`, { bg: '0B1F3A', color: 'FFFFFF', size: 17, bold: true });
+      satir++;
+      setH(satir, 18);
+      _ceyrekKpiSatirYaz(wsKpi, satir, 0, 11, `Rapor Tarihi: ${tarihStr}   ·   ${toplamInspector} inspector içeriyor`, { bg: '13294B', color: 'B7C6E0', size: 10, bold: false });
       satir += 2;
 
-      const KART_GENISLIK = 3, KART_ARALIK = 1, KART_YUKSEKLIK_GENEL = 3;
+      const KART_GENISLIK = 3, KART_ARALIK = 1, KART_YUKSEKLIK_GENEL = 4; // başlık+büyük değer+alt yazı+mini bar
       genelKartlar.forEach((k, i) => {
         const kolIdx = i % 3, satirBlok = Math.floor(i / 3);
         const c0 = kolIdx * (KART_GENISLIK + KART_ARALIK);
         const r0 = satir + satirBlok * (KART_YUKSEKLIK_GENEL + 1);
+        setH(r0, 20); setH(r0 + 1, 32); setH(r0 + 2, 15); if (k.bar !== undefined) setH(r0 + 3, 8);
         _ceyrekKpiKartYaz(wsKpi, r0, c0, KART_GENISLIK, k.baslik,
-          [{ text: k.deger, size: 20, bold: true }, { text: k.alt, size: 9, bold: false, color: '5A7FA8' }],
-          k.accent, k.light);
+          [{ text: k.deger, size: 24, bold: true, color: k.accent }, { text: k.alt, size: 9, bold: false, color: '5A7FA8' }],
+          k.accent, k.light, k.bar);
       });
       satir += Math.ceil(genelKartlar.length / 3) * (KART_YUKSEKLIK_GENEL + 1) + 1;
 
       // Çeyrek bazlı kartlar: her çeyreğin KENDİ verisine giren tüm
       // inspector'ların ortalaması (referans seviyeden bağımsız — o çeyreğe
       // veri girilmişse hesaba katılır).
-      _ceyrekKpiSatirYaz(wsKpi, satir, 0, 11, '📅 ÇEYREK BAZLI ORTALAMALAR', { bg: '0B1F3A', color: 'FFFFFF', size: 12, bold: true });
+      setH(satir, 22);
+      _ceyrekKpiSatirYaz(wsKpi, satir, 0, 11, '📅  ÇEYREK BAZLI ORTALAMALAR', { bg: '0B1F3A', color: 'FFFFFF', size: 13, bold: true });
       satir += 2;
 
       const QMONTHS = { Q1: 'Şub-Mar-Nis', Q2: 'May-Haz-Tem', Q3: 'Ağu-Eyl-Eki', Q4: 'Kas-Ara-Oca' };
       const QRENK = { Q1: { accent: '1565C0', light: 'E3F2FD' }, Q2: { accent: '2E7D32', light: 'E8F5E9' }, Q3: { accent: 'EF6C00', light: 'FFF3E0' }, Q4: { accent: 'C62828', light: 'FFEBEE' } };
       const KART_GENISLIK2 = 2, KART_ARALIK2 = 1, ceyrekBaslangicSatir = satir;
+      setH(ceyrekBaslangicSatir, 20); setH(ceyrekBaslangicSatir + 1, 22);
+      for (let i = 2; i <= 5; i++) setH(ceyrekBaslangicSatir + i, 15);
       QC.forEach((q, i) => {
         const kayitlarQ = kayitlar.filter(k => k[q]);
         const alan = fn => kayitlarQ.map(fn).filter(v => v !== null && v !== undefined);
@@ -3825,20 +3915,27 @@ function exportCeyrekArsiviToExcel() {
         const avgT = _ort(alan(k => k[q].teknikSkor));
         const avgA = _ort(alan(k => k[q].gunlukOrtNormal));
         const c0 = i * (KART_GENISLIK2 + KART_ARALIK2);
+        const tv = _ceyrekKpiTierRenk(avgV), ti = _ceyrekKpiTierRenk(avgI), tt = _ceyrekKpiTierRenk(avgT);
         const satirlar = kayitlarQ.length
           ? [
-              { text: `${kayitlarQ.length} inspector`, size: 12, bold: true },
-              { text: `Verimlilik: ${avgV !== null ? avgV + '%' : '—'}`, size: 10, bold: false },
-              { text: `İkinci Insp.: ${avgI !== null ? avgI + '%' : '—'}`, size: 10, bold: false },
-              { text: `Teknik Skor: ${avgT !== null ? avgT + '%' : '—'}`, size: 10, bold: false },
+              { text: `${kayitlarQ.length} inspector`, size: 13, bold: true },
+              { text: `Verimlilik: ${avgV !== null ? avgV + '%' : '—'}`, size: 10, bold: true, color: tv.accent },
+              { text: `İkinci Insp.: ${avgI !== null ? avgI + '%' : '—'}`, size: 10, bold: true, color: ti.accent },
+              { text: `Teknik Skor: ${avgT !== null ? avgT + '%' : '—'}`, size: 10, bold: true, color: tt.accent },
               { text: `Gün. Ort.: ${avgA !== null ? formatTR(avgA) + ' adet' : '—'}`, size: 10, bold: false }
             ]
-          : [{ text: 'Veri Yok', size: 12, bold: true, color: '9AA5B1' }];
-        _ceyrekKpiKartYaz(wsKpi, ceyrekBaslangicSatir, c0, KART_GENISLIK2, `${q}  (${QMONTHS[q]})`, satirlar, QRENK[q].accent, QRENK[q].light);
+          : [{ text: 'Veri Yok', size: 13, bold: true, color: '9AA5B1' }];
+        _ceyrekKpiKartYaz(wsKpi, ceyrekBaslangicSatir, c0, KART_GENISLIK2, `${q}  ·  ${QMONTHS[q]}`, satirlar, QRENK[q].accent, QRENK[q].light);
       });
       satir = ceyrekBaslangicSatir + 6 + 1;
 
+      // Sayfa zeminini kartlardan ÖNCE değil SONRA (var olan hücrelere
+      // dokunmadan, sadece boş kalanlara) döşüyoruz — kartlar bu sayede
+      // koyu-açık kontrastla belirgin şekilde öne çıkıyor.
+      _ceyrekKpiSayfaZeminiYaz(wsKpi, satir, 11);
+
       wsKpi['!cols'] = Array.from({ length: 11 }, () => ({ wch: 13 }));
+      wsKpi['!rows'] = Array.from({ length: satir + 1 }, (_, r) => rowH[r] || { hpt: 8 });
       wsKpi['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: satir, c: 10 } });
       XLSX.utils.book_append_sheet(wb, wsKpi, 'KPI Özeti');
     })();
