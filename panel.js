@@ -3142,7 +3142,7 @@ function getEfektifPerfSeviye(inspector, performansVal) {
   // gösterilen ETİKET değişir. farkYaratan bayrağı, isteyen yerlerde ayrıca
   // rozet/ikon eklemek için de kullanılabilir.
   const farkYaratan = gunlukOrtNormal > 450;
-  if (farkYaratan) label = t.perf_farkyaratan;
+  if (farkYaratan) { label = t.perf_farkyaratan; cls = 'perf-farkyaratan'; }
 
   // ── YENİ: ADET BAZLI PERFORMANS % ────────────────────────────────────
   // Gösterilen "PERFORMANS %" artık Verimlilik Perf formülü yerine doğrudan
@@ -3204,6 +3204,10 @@ function updateSummaryStats(inspectors) {
   // Performans seviyeleri artık TAMAMEN Mesaisiz Günlük Ort. (adet) bazlı —
   // bkz. getEfektifPerfSeviye(). Verimlilik Perf (%) hesabı değişmedi, sadece
   // hangi kutuya girileceğine artık % değil ham üretim adedi karar veriyor.
+  const farkYaratanSayisi = inspectors.filter(i => {
+    const p = getPerfVal(i);
+    return getEfektifPerfSeviye(i, p).cls === 'perf-farkyaratan';
+  }).length;
   const good = inspectors.filter(i => {
     const p = getPerfVal(i);
     return getEfektifPerfSeviye(i, p).cls === 'perf-good';
@@ -3234,6 +3238,7 @@ function updateSummaryStats(inspectors) {
 
   const totalProducts = inspectors.reduce((sum, i) => sum + (i.adet || 0), 0);
 
+  if (document.getElementById('farkyaratan-count')) document.getElementById('farkyaratan-count').textContent = farkYaratanSayisi;
   document.getElementById('good-count').textContent = good;
   document.getElementById('average-count').textContent = average;
   document.getElementById('poor-count').textContent = poor;
@@ -3822,6 +3827,7 @@ function exportCeyrekArsiviToExcel() {
 // oranı ile birlikte tablo halinde gösterir.
 // ─────────────────────────────────────────────
 const PERF_SEVIYE_TANIM = {
+  farkyaratan: { label: 'Fark Yaratan (>450 adet/gün)',    icon: '🚀', min: 100, max: Infinity, color: '#00ACC1' },
   good:      { label: 'İyi (≥400 adet/gün)',              icon: '👍', min: 98,  max: Infinity, color: 'var(--blue)'  },
   average:   { label: 'Orta (360-399 adet/gün)',           icon: '⚠️', min: 88,  max: 98,       color: 'var(--amber)' },
   weak:      { label: 'Gelişime Açık (300-359 adet/gün)',  icon: '🔻', min: 73,  max: 88,       color: '#EF5350'      },
@@ -3867,7 +3873,7 @@ function showPerfSeviyeDetay(seviyeKey) {
   const rows = liste.map(insp => {
     const _efektif = getEfektifPerfSeviye(insp, insp.genelHizPerf || 0);
     const perf = _efektif.adetBazliPerf;
-    const perfColor = ({'perf-good':'#2563eb','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'})[_efektif.cls] || getProgressColor(perf);
+    const perfColor = ({'perf-farkyaratan':'#00ACC1','perf-good':'#2563eb','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'})[_efektif.cls] || getProgressColor(perf);
     const otDk = Math.round((insp.toplamMesaistiSaniye || 0) / 60);
     const otHtml = otDk > 0
       ? `<span style="color:#E65100;font-weight:600">🌙 ${otDk}dk</span>`
@@ -4194,7 +4200,7 @@ function renderInspectorCards() {
     const performansClass = _efektifSeviye.cls;
     const performansText = performansVal + '%';
     const progressAngle = Math.min(360, (performansVal / 100) * 360);
-    const progressColor = ({'perf-good':'#2563eb','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'})[performansClass] || getProgressColor(performansVal);
+    const progressColor = ({'perf-farkyaratan':'#00ACC1','perf-good':'#2563eb','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'})[performansClass] || getProgressColor(performansVal);
     
     const ini = inspector.ins.split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
     const klasmanCount = Object.keys(inspector.klasmanlar).length;
@@ -5536,6 +5542,7 @@ function renderPerfTabloFromData(page) {
   const pageData = performansData.slice(startIdx, startIdx + _PERF_PER_PAGE);
 
   const perfColorMap = {
+    'perf-farkyaratan': { bg: 'linear-gradient(135deg,#E1F5FE,#F0FBFF)', accent: '#00ACC1', badge: '#00ACC1', badgeTxt: '#fff', label: 'FARK YARATAN' },
     'perf-excellent': { bg: 'linear-gradient(135deg,#E8F5E9,#F1F8E9)', accent: '#00897B', badge: '#00897B', badgeTxt: '#fff', label: 'MÜKEMMEL' },
     'perf-good':      { bg: 'linear-gradient(135deg,#E3F2FD,#EEF7FF)', accent: '#1565C0', badge: '#1565C0', badgeTxt: '#fff', label: 'İYİ' },
     'perf-average':   { bg: 'linear-gradient(135deg,#FFF8E1,#FFFDE7)', accent: '#F57F17', badge: '#F57F17', badgeTxt: '#fff', label: 'ORTA' },
@@ -5697,12 +5704,13 @@ function renderPerfTabloFromData(page) {
             // ayrı bir % eşiği (genelHizPerf ≥85/70/50) vardı ve bu, aynı
             // 89 inspector için Dashboard'daki sayaçlardan (26/14/32/17)
             // FARKLI sayılar göstermesine yol açıyordu.
-            const sayaclar = { good: 0, average: 0, weak: 0, verypoor: 0 };
+            const sayaclar = { farkyaratan: 0, good: 0, average: 0, weak: 0, verypoor: 0 };
             performansData.forEach(r => {
               const cls = getEfektifPerfSeviye(r, r.genelHizPerf ?? 0).cls.replace('perf-', '');
               if (sayaclar[cls] !== undefined) sayaclar[cls]++;
             });
             return [
+              ['🚀',(translations[currentLang]||translations.tr).perf_farkyaratan,sayaclar.farkyaratan,'#00ACC1','#E1F5FE'],
               ['👍',(translations[currentLang]||translations.tr).perf_good,sayaclar.good,'var(--blue)','var(--lblue2)'],
               ['⚠️',(translations[currentLang]||translations.tr).perf_average,sayaclar.average,'var(--amber)','var(--lamber)'],
               ['🔻',(translations[currentLang]||translations.tr).perf_weak,sayaclar.weak,'#EF5350','#FFEBEE'],
@@ -7704,7 +7712,7 @@ function renderTeamSection() {
     .map(i => ({ i, seviye: getEfektifPerfSeviye(i, i.genelHizPerf || 0) }))
     .sort((a, b) => b.seviye.adetBazliPerf - a.seviye.adetBazliPerf)
     .map(({ i, seviye }) => {
-      const color = ({'perf-good':'#2563eb','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'})[seviye.cls] || 'var(--muted)';
+      const color = ({'perf-farkyaratan':'#00ACC1','perf-good':'#2563eb','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'})[seviye.cls] || 'var(--muted)';
       const ini   = (i.ins || '').split(' ').map(w => w[0] || '').slice(0, 2).join('').toUpperCase();
       const safeName = _escapeHtml(i.ins);
       const jsName   = safeName.replace(/'/g, "\\'");
