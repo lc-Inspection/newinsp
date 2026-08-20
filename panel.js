@@ -107,8 +107,7 @@ const translations = {
     // Summary stats
     stat_total_inspector: 'Toplam Inspector',
     stat_excellent:       'Mükemmel (≥95%)',
-    stat_farkyaratan:     'Fark Yaratan (>450 adet/gün)',
-    stat_good:            'İyi (400-450 adet/gün)',
+    stat_good:            'İyi (≥400 adet/gün)',
     stat_average:         'Orta (360-399 adet/gün)',
     stat_poor:            'Gelişime Açık (300-359 adet/gün)',
     stat_verypoor:        'Zayıf (<300 adet/gün)',
@@ -892,12 +891,19 @@ function jsonpFetch(url, params) {
   const qs = Object.entries(params)
     .map(([k, v]) => encodeURIComponent(k) + '=' + encodeURIComponent(String(v == null ? '' : v).normalize('NFC')))
     .join('&');
-  const fullUrl = url + (url.includes('?') ? '&' : '?') + qs;
+  // "_" (zaman damgası) parametresi + cache:'no-store': bu fonksiyon aynı
+  // action+token için hep BİREBİR AYNI URL'e gittiği için, tarayıcı
+  // önbelleğe alıp sunucuya hiç gitmeden eski cevabı geri verebiliyordu
+  // (ör. bir veri push'undan hemen sonra tekrar çekince hâlâ eski/boş
+  // sonuç gelmesi — Depo Analizi'nde bulduğumuz sorunun aynısı, kaynağı
+  // burasıymış). Bu iki önlem, jsonpFetch kullanan TÜM 30+ çağrı noktasını
+  // tek seferde düzeltir.
+  const fullUrl = url + (url.includes('?') ? '&' : '?') + qs + '&_=' + Date.now();
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25000);
 
-  return fetch(fullUrl, { method: 'GET', signal: controller.signal })
+  return fetch(fullUrl, { method: 'GET', signal: controller.signal, cache: 'no-store' })
     .then(res => {
       clearTimeout(timer);
       if (!res.ok) throw new Error('API HTTP ' + res.status);
@@ -3198,16 +3204,9 @@ function updateSummaryStats(inspectors) {
   // Performans seviyeleri artık TAMAMEN Mesaisiz Günlük Ort. (adet) bazlı —
   // bkz. getEfektifPerfSeviye(). Verimlilik Perf (%) hesabı değişmedi, sadece
   // hangi kutuya girileceğine artık % değil ham üretim adedi karar veriyor.
-  // "Fark Yaratan" (450+ adet/gün) artık "İyi" kutusunun İÇİNDE değil, AYRI
-  // bir kutuda sayılıyor — good, SADECE 400-450 arası olanları içerir.
   const good = inspectors.filter(i => {
     const p = getPerfVal(i);
-    const ef = getEfektifPerfSeviye(i, p);
-    return ef.cls === 'perf-good' && !ef.farkYaratan;
-  }).length;
-  const farkYaratan = inspectors.filter(i => {
-    const p = getPerfVal(i);
-    return getEfektifPerfSeviye(i, p).farkYaratan;
+    return getEfektifPerfSeviye(i, p).cls === 'perf-good';
   }).length;
   const average = inspectors.filter(i => {
     const p = getPerfVal(i);
@@ -3236,7 +3235,6 @@ function updateSummaryStats(inspectors) {
   const totalProducts = inspectors.reduce((sum, i) => sum + (i.adet || 0), 0);
 
   document.getElementById('good-count').textContent = good;
-  if (document.getElementById('farkyaratan-count')) document.getElementById('farkyaratan-count').textContent = farkYaratan;
   document.getElementById('average-count').textContent = average;
   document.getElementById('poor-count').textContent = poor;
   if (document.getElementById('verypoor-count')) document.getElementById('verypoor-count').textContent = veryPoor;
@@ -3415,12 +3413,10 @@ function _ceyrekMetrikHucre(veri) {
   const renk = (v, tersMi) => v === null || v === undefined ? 'var(--muted2)'
     : (v >= 85 ? '#00897B' : v >= 70 ? '#F57F17' : v >= 50 ? '#EF5350' : '#B71C1C');
   // Verimlilik artık % yerine panel genelindeki İyi/Orta/Gelişime Açık/Zayıf
-  // etiketiyle gösteriliyor — ama artık DOĞRUDAN mutlak adete (gunlukOrtNormal)
-  // göre, kişiye özel hedeften etkilenen % değerine göre DEĞİL (bkz.
-  // _ceyrekSeviyeFromVerimlilik'teki not). Fareyle üzerine gelince hâlâ ham
-  // yüzde tooltip'te görünür.
-  const vSeviye = (veri.gunlukOrtNormal !== null && veri.gunlukOrtNormal !== undefined && typeof _ceyrekSeviyeFromVerimlilik === 'function')
-    ? _ceyrekSeviyeFromVerimlilik(veri.gunlukOrtNormal) : null;
+  // etiketiyle gösteriliyor (bkz. _ceyrekSeviyeFromVerimlilik) — fareyle
+  // üzerine gelince ham yüzde tooltip'te görünür.
+  const vSeviye = (veri.verimlilik !== null && veri.verimlilik !== undefined && typeof _ceyrekSeviyeFromVerimlilik === 'function')
+    ? _ceyrekSeviyeFromVerimlilik(veri.verimlilik) : null;
   const vMetin = vSeviye ? vSeviye.label : '—';
   const vRenk  = vSeviye ? '#' + vSeviye.color : 'var(--muted2)';
   const vTitle = (veri.verimlilik !== null && veri.verimlilik !== undefined) ? ` title="${veri.verimlilik}%"` : '';
@@ -3537,22 +3533,17 @@ function changeCeyrekSayfa(delta) {
 // hesaplanır (yani en güncel bilinen durum). Rapor: bir "Özet" sayfası,
 // tüm çeyreklerin göründüğü bir "Tüm Veriler" sayfası, ve her seviye için
 // AYRI birer sayfa (İyi / Orta / Gelişime Açık / Zayıf) içerir.
-function _ceyrekSeviyeFromVerimlilik(g) {
-  // DİKKAT — bu fonksiyon artık YÜZDE değil, DOĞRUDAN "Günlük Ort. (Normal
-  // Saatte)" adedini (mutlak sayı) alır. Eskiden saklanan 'verimlilik'
-  // yüzdesi (adetBazliPerf) kullanılıyordu, ama bu yüzde kişinin ÖZEL
-  // hedefine (inspector.hedefAdetGunluk) göre hesaplanıyor — hedefi 450'den
-  // farklı olan biri için, aynı adet farklı bir yüzdeye denk gelip panelin
-  // GENELİNDEKİ mutlak eşiklerden (getEfektifPerfSeviye: 400/360/300
-  // adet/gün) FARKLI bir kategoriye düşebiliyordu (ör. 390 adet/gün,
-  // hedefi 440 olan biri için Dashboard'da "Orta" iken Çeyrek Arşivi'nde
-  // "İyi" görünüyordu). Artık ikisi de AYNI mutlak eşiği kullanıyor —
-  // tutarsızlık imkansız hale geldi.
-  if (g === null || g === undefined) return null;
-  if (g > 450)  return { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE' };
-  if (g >= 400) return { key: 'iyi',    label: 'İyi',           color: '2563EB', bg: 'E3F2FD' };
-  if (g >= 360) return { key: 'orta',   label: 'Orta',          color: 'F57F17', bg: 'FFF8E1' };
-  if (g >= 300) return { key: 'acik',   label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE' };
+function _ceyrekSeviyeFromVerimlilik(v) {
+  // ceyrekArsivi'ndeki 'verimlilik' değeri zaten adet-bazlı % olarak
+  // saklanıyor (getEfektifPerfSeviye(...).adetBazliPerf — 450/gün hedefine
+  // göre). Aynı fonksiyonun eşiklerinin (Fark Yaratan >450, İyi 400-450,
+  // Orta 360-399, Gelişime Açık 300-359, Zayıf <300 adet/gün) % karşılığı:
+  // >450 → >%100, 400/450≈%89, 360/450=%80, 300/450≈%67.
+  if (v === null || v === undefined) return null;
+  if (v > 100) return { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE' };
+  if (v >= 89) return { key: 'iyi',    label: 'İyi',           color: '2563EB', bg: 'E3F2FD' };
+  if (v >= 80) return { key: 'orta',   label: 'Orta',          color: 'F57F17', bg: 'FFF8E1' };
+  if (v >= 67) return { key: 'acik',   label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE' };
   return              { key: 'zayif',  label: 'Zayıf',         color: 'B71C1C', bg: 'FFEBEE' };
 }
 
@@ -3565,7 +3556,7 @@ function _ceyrekReferansSeviye(kayit) {
     const q = siraQ[(startIdx - i + 4) % 4];
     const veri = kayit[q];
     if (veri && veri.verimlilik !== null && veri.verimlilik !== undefined) {
-      return { ceyrek: q, veri, seviye: _ceyrekSeviyeFromVerimlilik(veri.gunlukOrtNormal) };
+      return { ceyrek: q, veri, seviye: _ceyrekSeviyeFromVerimlilik(veri.verimlilik) };
     }
   }
   return { ceyrek: null, veri: null, seviye: null };
@@ -3700,11 +3691,10 @@ function exportCeyrekArsiviToExcel() {
     // Günlük Ort. (Normal Saatte) bir adet değeri — % değil, sonuna "adet" eklenir.
     const fmtAdet = v => (v === null || v === undefined) ? '—' : formatTR(v) + ' adet';
     // Verimlilik artık Excel'de de ekrandaki gibi İyi/Orta/Gelişime Açık/Zayıf
-    // etiketiyle gösteriliyor — ham yüzde değil, VE artık mutlak adete
-    // (gunlukOrtNormal) göre, kişiye özel hedeften bağımsız.
-    const fmtVSeviye = g => {
-      if (g === null || g === undefined) return '—';
-      const s = _ceyrekSeviyeFromVerimlilik(g);
+    // etiketiyle gösteriliyor — ham yüzde değil.
+    const fmtVSeviye = v => {
+      if (v === null || v === undefined) return '—';
+      const s = _ceyrekSeviyeFromVerimlilik(v);
       return s ? s.label : '—';
     };
 
@@ -3740,7 +3730,7 @@ function exportCeyrekArsiviToExcel() {
       };
       QC.forEach(q => {
         const v = k[q];
-        row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.gunlukOrtNormal) : '—';
+        row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.verimlilik) : '—';
         row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
         row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
         row[`${q} Günlük Ort. (Normal)`] = v ? fmtAdet(v.gunlukOrtNormal) : '—';
@@ -3781,7 +3771,7 @@ function exportCeyrekArsiviToExcel() {
         };
         QC.forEach(q => {
           const v = k[q];
-          row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.gunlukOrtNormal) : '—';
+          row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.verimlilik) : '—';
           row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
           row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
           row[`${q} Günlük Ort. (Normal)`] = v ? fmtAdet(v.gunlukOrtNormal) : '—';
@@ -3818,11 +3808,10 @@ function exportCeyrekArsiviToExcel() {
 // oranı ile birlikte tablo halinde gösterir.
 // ─────────────────────────────────────────────
 const PERF_SEVIYE_TANIM = {
-  farkyaratan: { label: 'Fark Yaratan (>450 adet/gün)',    icon: '🚀', color: '#00ACC1' },
-  good:      { label: 'İyi (400-450 adet/gün)',            icon: '👍', color: 'var(--blue)'  },
-  average:   { label: 'Orta (360-399 adet/gün)',           icon: '⚠️', color: 'var(--amber)' },
-  weak:      { label: 'Gelişime Açık (300-359 adet/gün)',  icon: '🔻', color: '#EF5350'      },
-  verypoor:  { label: 'Zayıf (<300 adet/gün)',             icon: '📉', color: '#B71C1C'      }
+  good:      { label: 'İyi (≥400 adet/gün)',              icon: '👍', min: 98,  max: Infinity, color: 'var(--blue)'  },
+  average:   { label: 'Orta (360-399 adet/gün)',           icon: '⚠️', min: 88,  max: 98,       color: 'var(--amber)' },
+  weak:      { label: 'Gelişime Açık (300-359 adet/gün)',  icon: '🔻', min: 73,  max: 88,       color: '#EF5350'      },
+  verypoor:  { label: 'Zayıf (<300 adet/gün)',             icon: '📉', min: -Infinity, max: 73, color: '#B71C1C'      }
 };
 
 
@@ -3845,16 +3834,10 @@ function showPerfSeviyeDetay(seviyeKey) {
   // Bu seviyeye giren inspectorleri filtrele — EFEKTİF seviyeye göre (kart
   // rozetiyle birebir tutarlı olması için): "İyi" eşiğini geçse bile
   // Mesaisiz Günlük Ort. <400 olan biri buraya değil "Orta"ya düşer.
-  // "farkyaratan" ve "good", cls olarak İKİSİ DE 'perf-good' — bu yüzden
-  // burada ayrıca farkYaratan bayrağına bakılarak ikisi birbirinden
-  // ayrıştırılıyor (kutudaki sayaçla popup listesi tutarlı olsun diye).
   const liste = performansData
     .filter(i => {
       const p = getDispPerf(i);
-      const ef = getEfektifPerfSeviye(i, p);
-      const efektifKey = ef.cls.replace('perf-', '');
-      if (seviyeKey === 'farkyaratan') return ef.farkYaratan;
-      if (seviyeKey === 'good') return efektifKey === 'good' && !ef.farkYaratan;
+      const efektifKey = getEfektifPerfSeviye(i, p).cls.replace('perf-', '');
       return efektifKey === seviyeKey;
     })
     .sort((a, b) => getEfektifPerfSeviye(b, b.genelHizPerf || 0).adetBazliPerf - getEfektifPerfSeviye(a, a.genelHizPerf || 0).adetBazliPerf);
@@ -4093,16 +4076,11 @@ function filterInspectors() {
 
   if (perfFilter) {
     filtered = filtered.filter(inspector => {
-      // Artık kutulardaki (üstteki 5 sayaç) İLE AYNI kaynak: getEfektifPerfSeviye
-      // — eskiden burada ayrı, hedef-normalize %-eşiği (85/70/50) vardı ve bu,
-      // "İyi" filtresine tıklayınca üstteki sayaçtan FARKLI kişiler listeleyebiliyordu.
-      const ef = getEfektifPerfSeviye(inspector, inspector.genelHizPerf || 0);
       switch(perfFilter) {
-        case 'farkyaratan': return ef.farkYaratan;
-        case 'good': return ef.cls === 'perf-good' && !ef.farkYaratan;
-        case 'average': return ef.cls === 'perf-average';
-        case 'poor': return ef.cls === 'perf-weak';
-        case 'verypoor': return ef.cls === 'perf-verypoor';
+        case 'good': return inspector.performans >= 85;
+        case 'average': return inspector.performans >= 70 && inspector.performans < 85;
+        case 'poor': return inspector.performans >= 50 && inspector.performans < 70;
+        case 'verypoor': return inspector.performans < 50;
         default: return true;
       }
     });
