@@ -4226,10 +4226,14 @@ function showPerfSeviyeDetay(seviyeKey) {
       ? `<span style="color:#E65100;font-weight:600">🌙 ${otDk}dk</span>`
       : `<span style="color:var(--muted2)">—</span>`;
     // Günlük adet ortalamaları: mesaisiz (normal saatte, overtime hariç) ve mesaili (toplam)
+    // Manuel "Günlük Ek Adet" düzeltmesi — HEM Mesaisiz HEM Mesaili günlük
+    // ortalamaya aynı miktarda eklenir (Dashboard kartı, inspector detay
+    // kartı ve buradaki liste BİREBİR aynı sayıyı göstersin diye).
     const _gunSayisiP  = insp.gunSayisi || 0;
     const _normalAdetP = (insp.toplamAdetGercek ?? insp.adet ?? 0) - (insp.toplamOvertimeAdet || 0);
-    const ortMesaisiz = _gunSayisiP > 0 ? Math.round(_normalAdetP / _gunSayisiP) : 0;
-    const ortMesaili   = _gunSayisiP > 0 ? Math.round((insp.toplamAdetGercek ?? insp.adet ?? 0) / _gunSayisiP) : 0;
+    const _ekAdetP = _gunlukEkAdetAl(insp.ins);
+    const ortMesaisiz = (_gunSayisiP > 0 ? Math.round(_normalAdetP / _gunSayisiP) : 0) + _ekAdetP;
+    const ortMesaili   = (_gunSayisiP > 0 ? Math.round((insp.toplamAdetGercek ?? insp.adet ?? 0) / _gunSayisiP) : 0) + _ekAdetP;
     return `
       <tr style="border-bottom:1px solid var(--border2)">
         <td style="padding:9px 10px;font-weight:600;color:var(--navy);cursor:pointer" onclick="document.getElementById('perf-seviye-popup').style.display='none'; showInspectorDetail('${insp.ins.replace(/'/g, "\\'")}')">${_escapeHtml(_formatDisplayName(insp.ins))}</td>
