@@ -8441,10 +8441,12 @@ async function saveKayipZaman() {
 // N adet (varsayılan 5) ikinci inspection kaydı girmeleri gerekiyor.
 async function saveIkinciInspection() {
   const siparisKodu    = document.getElementById('ii-siparis-kodu')?.value?.trim() || '';
+  const anaTanim       = document.getElementById('ii-ana-tanim')?.value?.trim() || '';
   const inspector      = document.getElementById('ii-inspector')?.value?.trim() || '';
   const ekipYoneticisi = document.getElementById('ii-ekip-yoneticisi')?.value?.trim() || '';
   const talepNo        = document.getElementById('ii-talep-no')?.value?.trim() || '';
   const talepMiktari   = parseInt(document.getElementById('ii-talep-miktari')?.value, 10) || 0;
+  const aqlMiktari     = parseInt(document.getElementById('ii-aql-miktari')?.value, 10) || 0;
   const sonuc          = document.getElementById('ii-sonuc')?.value || '';
   const notAlani       = document.getElementById('ii-not')?.value?.trim() || '';
   const tarih          = document.getElementById('ii-tarih')?.value || _bugununTarihiYerel();
@@ -8459,7 +8461,7 @@ async function saveIkinciInspection() {
 
   const record = {
     id: Date.now().toString(),
-    siparisKodu, inspector, ekipYoneticisi, talepNo, talepMiktari, sonuc, notAlani,
+    siparisKodu, anaTanim, inspector, ekipYoneticisi, talepNo, talepMiktari, aqlMiktari, sonuc, notAlani,
     tarih,
     degerlendiren: currentUser?.username || '',
     savedAt: new Date().toISOString()
@@ -8484,8 +8486,10 @@ async function saveIkinciInspection() {
     // Formu temizle (Inspector/Ekip Yöneticisi hariç — art arda aynı kişi için birden çok girilebilir)
     const _el = id => document.getElementById(id);
     if (_el('ii-siparis-kodu'))  _el('ii-siparis-kodu').value = '';
+    if (_el('ii-ana-tanim'))     _el('ii-ana-tanim').value = '';
     if (_el('ii-talep-no'))      _el('ii-talep-no').value = '';
     if (_el('ii-talep-miktari')) _el('ii-talep-miktari').value = '';
+    if (_el('ii-aql-miktari'))   _el('ii-aql-miktari').value = '';
     if (_el('ii-sonuc'))         _el('ii-sonuc').value = '';
     if (_el('ii-not'))           _el('ii-not').value = '';
     renderIkinciInspectionTablo();
@@ -10593,6 +10597,14 @@ function renderAzDegerlendirilenlerTablosu() {
 // sistemdeki mevcut isimlerden doldurur (kullanıcı talebiyle: elle yazmak
 // yerine sistemden seçilsin).
 async function fillIkinciInspectionDropdowns() {
+  // Ana Tanım: sistemde tanımlı klasmanlar öneri olarak sunulur (datalist),
+  // ama kullanıcı listede olmayan bir değeri de elle yazabilir.
+  const anaTanimList = document.getElementById('ii-ana-tanim-list');
+  if (anaTanimList) {
+    const adlar = klasmanlar.map(k => k.ad).filter(Boolean).slice().sort((a,b) => a.localeCompare(b, 'tr'));
+    anaTanimList.innerHTML = adlar.map(ad => `<option value="${_escapeHtml(ad)}"></option>`).join('');
+  }
+
   const insSel = document.getElementById('ii-inspector');
   if (insSel) {
     const prev = insSel.value;
@@ -11511,23 +11523,27 @@ function exportIkinciInspectionToExcel() {
   });
   if (!satirlar.length) { alert('⚠️ Filtreye uyan (dışa aktarılacak) kayıt yok.'); return; }
 
+  // Sütun sırası ve isimleri kullanıcının paylaştığı Excel formatıyla birebir
+  // eşleşecek şekilde ayarlandı: Sipariş Numarası, Oluşturan, Inspection
+  // Tarihi, Ana Tanım, Inspector, Yönetici, Talep Numarası, Talep Miktarı,
+  // AQL Miktarı, Nihai Sonuç.
   const data = satirlar.map(r => ({
-    'Sipariş Kodu': r.siparisKodu || '',
+    'Sipariş Numarası': r.siparisKodu || '',
+    'Oluşturan': _formatDisplayName(r.degerlendiren || ''),
+    'Inspection Tarihi': r.tarih || '',
+    'Ana Tanım': r.anaTanim || '',
     'Inspector': _formatDisplayName(r.inspector || ''),
-    'Ekip Yöneticisi': _formatDisplayName(r.ekipYoneticisi || ''),
-    'Talep No': r.talepNo || '',
+    'Yönetici': _formatDisplayName(r.ekipYoneticisi || ''),
+    'Talep Numarası': r.talepNo || '',
     'Talep Miktarı': r.talepMiktari || 0,
-    'Sonuç': r.sonuc || '',
-    'Not': r.notAlani || '',
-    'Tarih': r.tarih || '',
-    'Giren': _formatDisplayName(r.degerlendiren || ''),
-    'Kayıt Zamanı': r.savedAt || ''
+    'AQL Miktarı': r.aqlMiktari || 0,
+    'Nihai Sonuç': r.sonuc || ''
   }));
 
   const workbook = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(data);
   ws['!cols'] = [
-    {wch:16},{wch:22},{wch:22},{wch:14},{wch:14},{wch:10},{wch:30},{wch:12},{wch:20},{wch:22}
+    {wch:16},{wch:20},{wch:16},{wch:18},{wch:22},{wch:22},{wch:16},{wch:14},{wch:12},{wch:12}
   ];
   XLSX.utils.book_append_sheet(workbook, ws, 'İkinci Inspection');
   const tarihStr = _bugununTarihiYerel();
@@ -11613,10 +11629,12 @@ function renderIkinciInspectionTablo() {
     return `<tr>
       ${checkboxTd}
       <td style="padding:7px 10px;font-size:12px;color:var(--muted2);font-family:'DM Mono',monospace">${_escapeHtml(r.siparisKodu || '—')}</td>
+      <td style="padding:7px 10px;font-size:12px;color:var(--navy)">${_escapeHtml(r.anaTanim || '—')}</td>
       <td style="padding:7px 10px;font-size:12px;color:var(--navy);font-weight:500">${_escapeHtml(_formatDisplayName(r.inspector))}</td>
       <td style="padding:7px 10px;font-size:12px;color:var(--muted2)">${_escapeHtml(_formatDisplayName(r.ekipYoneticisi || '—'))}</td>
       <td style="padding:7px 10px;font-size:12px;color:var(--muted2);font-family:'DM Mono',monospace">${_escapeHtml(r.talepNo || '—')}</td>
       <td style="padding:7px 10px;font-size:12px;color:var(--muted2)">${r.talepMiktari || 0}</td>
+      <td style="padding:7px 10px;font-size:12px;color:var(--muted2)">${r.aqlMiktari || 0}</td>
       <td style="padding:7px 10px">${durumHtml}</td>
       <td style="padding:7px 10px;font-size:12px">${r.notAlani ? `<button type="button" onclick="showIiNotPopup('${String(r.id).replace(/'/g,"\\'")}')" title="Notu görüntüle" style="border:none;background:var(--lblue3);color:var(--blue2);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:13px;line-height:1">👁️</button>` : `<span style="color:var(--muted2);font-size:12px">—</span>`}</td>
       <td style="padding:7px 10px;font-size:12px;color:var(--muted2)">${_escapeHtml(r.tarih || '—')}</td>
@@ -11648,10 +11666,12 @@ function renderIkinciInspectionTablo() {
     <thead><tr style="border-bottom:2px solid var(--border2)">
       ${checkboxTh}
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Sipariş Kodu</th>
+      <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Ana Tanım</th>
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Inspector</th>
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Ekip Yöneticisi</th>
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Talep No</th>
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Talep Miktarı</th>
+      <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">AQL Miktarı</th>
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Sonuç</th>
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Not</th>
       <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--muted);text-transform:uppercase">Tarih</th>
