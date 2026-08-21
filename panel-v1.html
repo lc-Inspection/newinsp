@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="panel.css">
+<link rel="stylesheet" href="panel.css?v=20260821-ekipdash">
 </head>
 <body>
 
@@ -993,10 +993,26 @@
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
             <div>
               <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">📊 Teknik İnceleme Skorları <span style="font-weight:400;text-transform:none;letter-spacing:0">(85 ve üzeri = başarılı)</span></div>
+              <div style="display:flex;gap:10px;align-items:stretch;margin-bottom:12px;flex-wrap:wrap">
+                <div style="flex:1 1 200px;min-width:180px;border:1px solid var(--border2);border-radius:8px;padding:10px;background:#fff">
+                  <canvas id="ti-ekip-skor-bar-chart" height="160"></canvas>
+                </div>
+                <div style="flex:0 0 150px;min-width:130px;border:1px solid var(--border2);border-radius:8px;padding:10px;background:#fff;display:flex;align-items:center;justify-content:center">
+                  <canvas id="ti-ekip-skor-pie-chart" height="150" width="150"></canvas>
+                </div>
+              </div>
               <div id="ti-ekip-skor-wrap" style="overflow-x:auto;border:1px solid var(--border2);border-radius:8px"></div>
             </div>
             <div>
               <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🔎 İkinci Inspection Kayıtları <span style="font-weight:400;text-transform:none;letter-spacing:0">(Geçti oranı)</span></div>
+              <div style="display:flex;gap:10px;align-items:stretch;margin-bottom:12px;flex-wrap:wrap">
+                <div style="flex:1 1 200px;min-width:180px;border:1px solid var(--border2);border-radius:8px;padding:10px;background:#fff">
+                  <canvas id="ti-ekip-ii-bar-chart" height="160"></canvas>
+                </div>
+                <div style="flex:0 0 150px;min-width:130px;border:1px solid var(--border2);border-radius:8px;padding:10px;background:#fff;display:flex;align-items:center;justify-content:center">
+                  <canvas id="ti-ekip-ii-pie-chart" height="150" width="150"></canvas>
+                </div>
+              </div>
               <div id="ti-ekip-ii-wrap" style="overflow-x:auto;border:1px solid var(--border2);border-radius:8px"></div>
             </div>
           </div>
@@ -1420,7 +1436,7 @@
 </div><!-- /app-shell -->
 
 <script src="panel2.js"></script>
-<script src="panel.js"></script>
+<script src="panel.js?v=20260821-ekipdash"></script>
 
 <!-- ══════════════════════════════════════════════════════════
      ANALİZ TAM EKRAN OVERLAY
