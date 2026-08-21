@@ -3162,20 +3162,24 @@ function getPerformanceLevelLabel(performans) {
   return t.perf_verypoor;
 }
 
-// ── PERFORMANS SEVİYESİ ARTIK MESAİSİZ GÜNLÜK ORT. (ADET) BAZLI ────────
-// Önceki sürümde seviye (İyi/Orta/Gelişime Açık/Zayıf) Verimlilik Perf (%)
-// eşiklerine göre belirleniyordu (sadece "İyi" için ek bir adet şartı
-// vardı). Artık TAMAMEN adet bazlı: kişinin normal saatte (overtime hariç)
-// günlük ortalama kontrol adedi hangi aralığa düşüyorsa seviyesi o oluyor.
-// Verimlilik Perf (%) hesaplaması DEĞİŞMEDİ, hâlâ aynı formülle hesaplanıp
-// kartta gösteriliyor — sadece hangi renkli kutuya/kategoriye gireceğine
-// artık % değil, ham üretim adedi karar veriyor.
-//   İyi              : Mesaisiz Günlük Ort. ≥ 400
-//   Orta (70-84%)     : 360 – 399
-//   Gelişime Açık     : 300 – 359
-//   Zayıf (<50%)      : < 300
-// Dashboard kartı, üstteki özet sayaçları VE performans seviyesi popup'ı
-// (showPerfSeviyeDetay) hepsi bu TEK fonksiyonu kullanarak tutarlı kalır.
+// ── PERFORMANS SEVİYESİ ARTIK 3 METRİĞİN PUANLAMA SİSTEMİNE GÖRE ───────
+// (kullanıcı talebiyle güncellendi) Kategori (Fark Yaratan/İyi/Orta/
+// Gelişime Açık/Zayıf) artık SADECE Günlük Ort. (Normal) adedine değil,
+// Çeyrek Performans Arşivi'ndeki AYNI puanlama sistemine göre belirleniyor:
+// her metrik (Günlük Ort., Teknik Skor, İkinci Insp) önce kendi eşiğine
+// (bkz. "⚖️ Performans Kriterleri" paneli / ceyrekEsikleri) göre bir puana
+// çevrilir (Fark Yaratan=5, İyi=4, Orta=3, Gelişime Açık=2, Zayıf=1),
+// sonra veri bulunan metriklerin puanlarının ARİTMETİK ORTALAMASI alınıp
+// en yakın tam sayıya yuvarlanır — bkz. _ceyrekGenelSeviye(). Veri olmayan
+// ("—") metrikler ortalamaya katılmaz; Günlük Ort. her zaman hesaplanabilir
+// olduğu için en az bu metrik her zaman değerlendirmeye girer.
+// "adetBazliPerf" (gösterilen PERFORMANS %) formülü DEĞİŞMEDİ, hâlâ Mesaisiz
+// Günlük Ort. ÷ Günlük Hedef Adet × 100 — sadece hangi renkli kutuya/
+// kategoriye gireceği artık TEK bir metriğe değil üçünün ortalamasına göre
+// belirleniyor.
+// Bu TEK fonksiyon uygulama genelinde (Dashboard kartları, üstteki özet
+// sayaçlar, performans seviyesi popup'ları, Detaylı Analiz sayfası —
+// panel2.js) kullanıldığı için buradaki değişiklik hepsine otomatik yansır.
 function getEfektifPerfSeviye(inspector, performansVal) {
   const gunSayisi   = inspector.gunSayisi || 0;
   const normalAdet  = (inspector.toplamAdetGercek ?? inspector.adet ?? 0) - (inspector.toplamOvertimeAdet || 0);
@@ -3190,32 +3194,49 @@ function getEfektifPerfSeviye(inspector, performansVal) {
   const gunlukOrtNormal = (gunSayisi > 0 ? Math.round(normalAdet / gunSayisi) : 0) + ekAdet;
   const t = translations[currentLang] || translations.tr;
 
-  let cls, label;
-  if (gunlukOrtNormal >= 400) {
-    cls = 'perf-good';      label = t.perf_good;
-  } else if (gunlukOrtNormal >= 360) {
-    cls = 'perf-average';   label = t.perf_average;
-  } else if (gunlukOrtNormal >= 300) {
-    cls = 'perf-weak';      label = t.perf_weak;
+  // Teknik Skor ve İkinci Insp — o an içinde bulunulan çeyreğin verisi
+  // (aynı fonksiyonlar Çeyrek Performans Arşivi'nde de kullanılıyor, bkz.
+  // getTeknikIncelemeSkorForInspector / getIkinciInspectionOraniForInspector).
+  // Veri yoksa null döner ve ortalamaya katılmaz.
+  const teknikSkorNesnesi = (typeof getTeknikIncelemeSkorForInspector === 'function')
+    ? getTeknikIncelemeSkorForInspector(inspector.ins) : null;
+  const teknikSkorDeger = (teknikSkorNesnesi && teknikSkorNesnesi.count > 0) ? teknikSkorNesnesi.percent : null;
+  const ikinciInspNesnesi = (typeof getIkinciInspectionOraniForInspector === 'function')
+    ? getIkinciInspectionOraniForInspector(inspector.ins) : null;
+  const ikinciInspDeger = ikinciInspNesnesi ? ikinciInspNesnesi.percent : null;
+
+  const genelSeviye = (typeof _ceyrekGenelSeviye === 'function')
+    ? _ceyrekGenelSeviye({ gunlukOrtNormal, teknikSkor: teknikSkorDeger, ikinciInsp: ikinciInspDeger })
+    : null;
+
+  // key -> cls/label eşlemesi: panelin i18n etiketleri (t.perf_*) KORUNUR —
+  // sadece hangi kategoriye düştüğü artık yeni puanlama sistemine göre
+  // belirleniyor.
+  const KEY_TO_CLS   = { farkyaratan: 'perf-farkyaratan', iyi: 'perf-good', orta: 'perf-average', acik: 'perf-weak', zayif: 'perf-verypoor' };
+  const KEY_TO_LABEL = { farkyaratan: t.perf_farkyaratan, iyi: t.perf_good, orta: t.perf_average, acik: t.perf_weak, zayif: t.perf_verypoor };
+
+  let cls, label, farkYaratan;
+  if (genelSeviye) {
+    cls = KEY_TO_CLS[genelSeviye.key] || 'perf-verypoor';
+    label = KEY_TO_LABEL[genelSeviye.key] || t.perf_verypoor;
+    farkYaratan = genelSeviye.key === 'farkyaratan';
   } else {
-    cls = 'perf-verypoor';  label = t.perf_verypoor;
+    // _ceyrekGenelSeviye teorik olarak hiç null dönmemeli (gunlukOrtNormal
+    // her zaman bir sayıdır) ama güvenlik için eski sade adet-bazlı mantığa
+    // düşülüyor (fonksiyon her nasılsa erişilemez olursa bile kart boş kalmasın).
+    if (gunlukOrtNormal >= 400) { cls = 'perf-good'; label = t.perf_good; }
+    else if (gunlukOrtNormal >= 360) { cls = 'perf-average'; label = t.perf_average; }
+    else if (gunlukOrtNormal >= 300) { cls = 'perf-weak'; label = t.perf_weak; }
+    else { cls = 'perf-verypoor'; label = t.perf_verypoor; }
+    farkYaratan = gunlukOrtNormal > 450;
+    if (farkYaratan) { cls = 'perf-farkyaratan'; label = t.perf_farkyaratan; }
   }
 
-  // "İyi" (≥400 adet/gün) skalası içinde 450'den BÜYÜK olanlar ayrıca
-  // "Fark Yaratan" olarak öne çıkarılır — cls (ve dolayısıyla renk) İyi ile
-  // aynı kalır (panelin dört renkli sistemi bozulmasın diye), sadece
-  // gösterilen ETİKET değişir. farkYaratan bayrağı, isteyen yerlerde ayrıca
-  // rozet/ikon eklemek için de kullanılabilir.
-  const farkYaratan = gunlukOrtNormal > 450;
-  if (farkYaratan) { label = t.perf_farkyaratan; cls = 'perf-farkyaratan'; }
-
-  // ── YENİ: ADET BAZLI PERFORMANS % ────────────────────────────────────
-  // Gösterilen "PERFORMANS %" artık Verimlilik Perf formülü yerine doğrudan
-  // Mesaisiz Günlük Ort. ÷ Günlük Hedef Adet × 100 olarak hesaplanıyor.
-  // Böylece kategori (İyi/Orta/Gelişime Açık/Zayıf) ile gösterilen % her
-  // zaman aynı metrikten (ham üretim adedi) geldiği için tutarlı olur —
-  // eskiden "Orta" kategorisinde %112 gibi kafa karıştırıcı sayılar
-  // görünebiliyordu, artık göremezsin.
+  // ── ADET BAZLI PERFORMANS % (DEĞİŞMEDİ) ──────────────────────────────
+  // Gösterilen "PERFORMANS %" hâlâ doğrudan Mesaisiz Günlük Ort. ÷ Günlük
+  // Hedef Adet × 100 — kategori artık farklı hesaplansa da bu sayı (ve
+  // Sheets'e giden verimlilikPerf) ETKİLENMEDİ, aynı formülle hesaplanmaya
+  // devam ediyor.
   const hedefAdetGunlukPerf = inspector.hedefAdetGunluk || 450;
   const adetBazliPerf = hedefAdetGunlukPerf > 0 ? Math.round((gunlukOrtNormal / hedefAdetGunlukPerf) * 100) : 0;
 
@@ -3223,9 +3244,12 @@ function getEfektifPerfSeviye(inspector, performansVal) {
     cls,
     label,
     farkYaratan,
-    demoted: false, // artık "yüzde düşürme" kavramı yok, kategori doğrudan adetten geliyor
+    demoted: false, // artık "yüzde düşürme" kavramı yok, kategori doğrudan puanlama sisteminden geliyor
     gunlukOrtNormal,
-    adetBazliPerf
+    adetBazliPerf,
+    // Yeni: isteyen ekranlar (tooltip vb.) hangi metriğin kaç puan verdiğini
+    // ve ortalama puanı gösterebilir.
+    genelSeviyeDetay: genelSeviye ? { ortalamaPuan: genelSeviye.ortalamaPuan, detay: genelSeviye.detay } : null
   };
 }
 
