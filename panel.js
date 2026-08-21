@@ -555,6 +555,38 @@ let klasmanlar = [];
 // Her çeyrek objesi: { verimlilik, ikinciInsp, teknikSkor, tarih }
 let ceyrekArsivi = {};
 
+// ── PERFORMANS KRİTERLERİ (AĞIRLIKLAR) — kullanıcı talebiyle eklendi ────
+// Çeyrek Performans Arşivi'ndeki "Performans" (eski adıyla "Verimlilik")
+// etiketi artık TEK BİR metriğe (Günlük Ort.) değil, 3 metriğe birden
+// (Günlük Ort., Teknik Skor, İkinci Insp) bakılarak belirleniyor. Bu obje,
+// her performans seviyesi için 3 metrikte aranan MİNİMUM değerleri tutar —
+// varsayılanlar kullanıcının verdiği tabloyla birebir aynıdır. "Zayıf"
+// seviyesi ayrı bir alan değildir — "acik" (Gelişime Açık) eşiğinin altı
+// otomatik olarak Zayıf sayılır.
+const CEYREK_ESIK_VARSAYILAN = {
+  gunlukOrt:  { farkYaratan: 450, iyi: 400, orta: 360, acik: 300 },
+  teknikSkor: { farkYaratan: 95,  iyi: 90,  orta: 85,  acik: 75  },
+  ikinciInsp: { farkYaratan: 95,  iyi: 90,  orta: 85,  acik: 75  }
+};
+const CEYREK_ESIK_LS_KEY = 'ceyrek_performans_esikleri_v1';
+let ceyrekEsikleri = JSON.parse(JSON.stringify(CEYREK_ESIK_VARSAYILAN));
+// Sayfa scriptleri yüklenir yüklenmez (ilk render'dan ÖNCE) localStorage'daki
+// kayıtlı eşikleri geri yükle — böylece Çeyrek Verisi Gönder / Excel'e Aktar
+// gibi ilk andan itibaren çalışabilecek fonksiyonlar da güncel eşikleri kullanır.
+(function _ceyrekEsikleriErkenYukle() {
+  try {
+    const raw = localStorage.getItem(CEYREK_ESIK_LS_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    ceyrekEsikleri = {
+      gunlukOrt:  { ...CEYREK_ESIK_VARSAYILAN.gunlukOrt,  ...(parsed.gunlukOrt  || {}) },
+      teknikSkor: { ...CEYREK_ESIK_VARSAYILAN.teknikSkor, ...(parsed.teknikSkor || {}) },
+      ikinciInsp: { ...CEYREK_ESIK_VARSAYILAN.ikinciInsp, ...(parsed.ikinciInsp || {}) }
+    };
+  } catch (e) { /* bozuk veri varsa sessizce varsayılana düş */ }
+})();
+
+
 // ── GÜNLÜK EK ADET (Normal Saatte) — manuel düzeltme (TÜM inspector'lara
 // ortak/global bir TEK değer) ─────────────────────────────────────────────
 // "Performans Analizi" sayfasında TEK bir kutuya girilip kaydedilen
@@ -3371,6 +3403,28 @@ async function loadCeyrekArsivi() {
   }
 }
 
+// Performans eşiklerini sunucudan çekmeyi DENER (backend bu action'ı
+// desteklemiyorsa sessizce yutulur — o durumda ceyrekEsikleri sadece bu
+// cihazın localStorage'ında kalıcı olmaya devam eder, hiçbir hata göstermez).
+async function loadCeyrekEsiklerFromServer() {
+  try {
+    const url = appConfig.sheetsWebAppUrl;
+    const token = appConfig.sheetsApiToken;
+    if (!url || !token) return;
+    const data = await jsonpFetch(url, { action: 'getCeyrekPerformansEsikleri', token });
+    if (data && data.status === 'ok' && data.esikler && typeof data.esikler === 'object') {
+      ceyrekEsikleri = {
+        gunlukOrt:  { ...CEYREK_ESIK_VARSAYILAN.gunlukOrt,  ...(data.esikler.gunlukOrt  || {}) },
+        teknikSkor: { ...CEYREK_ESIK_VARSAYILAN.teknikSkor, ...(data.esikler.teknikSkor || {}) },
+        ikinciInsp: { ...CEYREK_ESIK_VARSAYILAN.ikinciInsp, ...(data.esikler.ikinciInsp || {}) }
+      };
+      try { localStorage.setItem(CEYREK_ESIK_LS_KEY, JSON.stringify(ceyrekEsikleri)); } catch(e) {}
+    }
+  } catch (e) {
+    console.warn('Performans eşikleri sunucudan çekilemedi (yerel/varsayılan değerler kullanılıyor):', e.message);
+  }
+}
+
 // Arşivi sunucuya kaydeder (fire-and-forget, setKlasmanlar ile aynı desen)
 async function _pushCeyrekArsiviToServer() {
   const url = appConfig.sheetsWebAppUrl;
@@ -3561,21 +3615,150 @@ async function ceyrekVerisiGonder(event) {
   }
 }
 
+// ── ⚖️ Performans Kriterleri (Ağırlıklar) — panel aç/kapa, tablo çizimi,
+// kaydetme (kullanıcı talebiyle eklendi) ────────────────────────────────
+
+function toggleCeyrekEsikPanel() {
+  const body = document.getElementById('ceyrek-esik-body');
+  const chev = document.getElementById('ceyrek-esik-chevron');
+  const hint = document.getElementById('ceyrek-esik-hint');
+  if (!body) return;
+  const acikMi = body.style.display !== 'none'; // bu tık kapatacaksa şu an açık demektir
+  body.style.display = acikMi ? 'none' : '';
+  if (chev) chev.style.transform = acikMi ? '' : 'rotate(180deg)';
+  if (hint) hint.textContent = acikMi ? 'Göstermek için tıklayın' : 'Gizlemek için tıklayın';
+  if (!acikMi) renderCeyrekEsikTablo(); // ilk açılışta güncel değerlerle çiz
+}
+
+const CEYREK_ESIK_SATIRLAR = [
+  { key: 'farkYaratan', label: '✨ Fark Yaratan' },
+  { key: 'iyi',         label: '✅ İyi' },
+  { key: 'orta',        label: '🟡 Orta' },
+  { key: 'acik',        label: '🟠 Gelişime Açık' }
+];
+const CEYREK_ESIK_METRIKLER = [
+  { key: 'gunlukOrt',  suffix: ' adet' },
+  { key: 'teknikSkor', suffix: '%' },
+  { key: 'ikinciInsp', suffix: '%' }
+];
+
+function renderCeyrekEsikTablo() {
+  const tbody = document.getElementById('ceyrek-esik-tablo-body');
+  if (!tbody) return;
+  let html = '';
+  CEYREK_ESIK_SATIRLAR.forEach(satir => {
+    html += `<tr style="border-bottom:1px solid var(--border2)">
+      <td style="padding:9px 12px;font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap">${satir.label}</td>
+      ${CEYREK_ESIK_METRIKLER.map(m => `
+        <td style="padding:7px 12px;text-align:center">
+          <input type="number" id="ceyrek-esik-input-${m.key}-${satir.key}" value="${ceyrekEsikleri[m.key][satir.key]}"
+            ${satir.key === 'acik' ? `oninput="_ceyrekEsikZayifGuncelle('${m.key}')"` : ''}
+            style="width:78px;text-align:center;padding:6px 8px;font-size:13px;border:1px solid var(--border2);border-radius:6px">
+          <span style="font-size:11px;color:var(--muted2)">${m.suffix}</span>
+        </td>`).join('')}
+    </tr>`;
+  });
+  // Zayıf satırı: ayrı girilmez, "Gelişime Açık" eşiğinin altı olarak salt-okunur gösterilir.
+  html += `<tr>
+    <td style="padding:9px 12px;font-size:13px;font-weight:600;color:var(--navy);white-space:nowrap">🔴 Zayıf</td>
+    ${CEYREK_ESIK_METRIKLER.map(m => `<td style="padding:7px 12px;text-align:center;font-size:12px;color:var(--muted2)" id="ceyrek-esik-zayif-${m.key}">&lt; ${ceyrekEsikleri[m.key].acik}${m.suffix}</td>`).join('')}
+  </tr>`;
+  tbody.innerHTML = html;
+}
+
+// "Gelişime Açık" (acik) girişi değiştikçe, altındaki salt-okunur "Zayıf"
+// hücresini canlı günceller (kaydetmeden önce bile doğru önizleme görünsün).
+function _ceyrekEsikZayifGuncelle(metrikKey) {
+  const inp = document.getElementById(`ceyrek-esik-input-${metrikKey}-acik`);
+  const hedef = document.getElementById(`ceyrek-esik-zayif-${metrikKey}`);
+  if (!inp || !hedef) return;
+  const suffix = CEYREK_ESIK_METRIKLER.find(m => m.key === metrikKey)?.suffix || '';
+  hedef.textContent = `< ${inp.value || 0}${suffix}`;
+}
+
+async function kaydetCeyrekEsikleri() {
+  const yeni = { gunlukOrt: {}, teknikSkor: {}, ikinciInsp: {} };
+  let gecersiz = false;
+  CEYREK_ESIK_METRIKLER.forEach(m => {
+    CEYREK_ESIK_SATIRLAR.forEach(satir => {
+      const el = document.getElementById(`ceyrek-esik-input-${m.key}-${satir.key}`);
+      const v = Number(el?.value);
+      if (!el || el.value === '' || isNaN(v)) gecersiz = true;
+      yeni[m.key][satir.key] = isNaN(v) ? 0 : v;
+    });
+  });
+  if (gecersiz) { alert('⚠️ Lütfen tüm alanlara geçerli bir sayı girin.'); return; }
+
+  // Mantıklı sıralama kontrolü: Fark Yaratan ≥ İyi ≥ Orta ≥ Gelişime Açık olmalı
+  for (const m of CEYREK_ESIK_METRIKLER) {
+    const e = yeni[m.key];
+    if (!(e.farkYaratan >= e.iyi && e.iyi >= e.orta && e.orta >= e.acik)) {
+      const ad = m.key === 'gunlukOrt' ? 'Günlük Ort. (Normal)' : m.key === 'teknikSkor' ? 'Teknik Skor' : 'İkinci Insp';
+      alert(`⚠️ "${ad}" sütununda değerler Fark Yaratan ≥ İyi ≥ Orta ≥ Gelişime Açık sırasında olmalı.`);
+      return;
+    }
+  }
+
+  ceyrekEsikleri = yeni;
+  try { localStorage.setItem(CEYREK_ESIK_LS_KEY, JSON.stringify(ceyrekEsikleri)); } catch(e) {}
+
+  const btn = document.getElementById('ceyrek-esik-save-btn');
+  const msg = document.getElementById('ceyrek-esik-save-msg');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Kaydediliyor...'; }
+
+  // Sunucuya da yazmayı DENER — backend bu action'ı desteklemiyorsa sessizce
+  // yutulur (hiçbir hata gösterilmez); bu durumda kriterler yine de BU
+  // CİHAZDA (localStorage) kalıcı olmaya devam eder ve hesaplamalara
+  // hemen yansır.
+  try {
+    const url = appConfig.sheetsWebAppUrl, token = appConfig.sheetsApiToken;
+    if (url && token) {
+      await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'setCeyrekPerformansEsikleri', token, esikler: ceyrekEsikleri })
+      });
+    }
+  } catch (e) {
+    console.warn('Performans eşikleri sunucuya kaydedilemedi (bu cihazda kayıtlı kalmaya devam ediyor):', e.message);
+  }
+
+  renderCeyrekEsikTablo();
+  // Ekrandaki TÜM çeyrek etiketleri (geçmiş çeyrekler dahil) anında yeni
+  // kriterlere göre yeniden hesaplanıp gösterilsin — hesaplama render
+  // anında yapıldığı için (ham veriler zaten saklı), sonraki her
+  // "Çeyrek Verisi Gönder" ve "Excel'e Aktar" da otomatik olarak bu
+  // kriterleri kullanır.
+  if (typeof renderCeyrekPerformansTablosu === 'function') renderCeyrekPerformansTablosu();
+
+  if (btn) { btn.disabled = false; btn.textContent = '💾 Kaydet'; }
+  if (msg) { msg.style.display = ''; setTimeout(() => { msg.style.display = 'none'; }, 3800); }
+}
+
+function varsayilanaDonCeyrekEsikleri() {
+  if (!confirm('Tüm performans kriterleri varsayılan değerlere döndürülecek. Emin misiniz?')) return;
+  ceyrekEsikleri = JSON.parse(JSON.stringify(CEYREK_ESIK_VARSAYILAN));
+  try { localStorage.setItem(CEYREK_ESIK_LS_KEY, JSON.stringify(ceyrekEsikleri)); } catch(e) {}
+  renderCeyrekEsikTablo();
+  if (typeof renderCeyrekPerformansTablosu === 'function') renderCeyrekPerformansTablosu();
+}
+
 function _ceyrekMetrikHucre(veri) {
   if (!veri) return '<span style="color:var(--muted2);font-size:13px">— veri yok —</span>';
   const renk = (v, tersMi) => v === null || v === undefined ? 'var(--muted2)'
     : (v >= 85 ? '#00897B' : v >= 70 ? '#F57F17' : v >= 50 ? '#EF5350' : '#B71C1C');
-  // Verimlilik artık % yerine panel genelindeki İyi/Orta/Gelişime Açık/Zayıf
-  // etiketiyle gösteriliyor (bkz. _ceyrekSeviyeFromVerimlilik) — fareyle
-  // üzerine gelince ham yüzde tooltip'te görünür.
-  const vSeviye = (veri.verimlilik !== null && veri.verimlilik !== undefined && typeof _ceyrekSeviyeFromVerimlilik === 'function')
-    ? _ceyrekSeviyeFromVerimlilik(veri.verimlilik) : null;
-  const vMetin = vSeviye ? vSeviye.label : '—';
-  const vRenk  = vSeviye ? '#' + vSeviye.color : 'var(--muted2)';
-  const vTitle = (veri.verimlilik !== null && veri.verimlilik !== undefined) ? ` title="${veri.verimlilik}%"` : '';
+  // Performans (eski adıyla Verimlilik) artık TEK metriğe değil, 3 metriğin
+  // (Günlük Ort./Teknik Skor/İkinci Insp) BİRLİKTE değerlendirilmesine göre
+  // belirleniyor — bkz. _ceyrekGenelSeviye() ve sayfa üstündeki "⚖️ Performans
+  // Kriterleri (Ağırlıklar)" paneli. Fareyle üzerine gelince hangi metriğin
+  // bu sonucu belirlediği tooltip'te görünür.
+  const pSeviye = typeof _ceyrekGenelSeviye === 'function' ? _ceyrekGenelSeviye(veri) : null;
+  const pMetin = pSeviye ? pSeviye.label : '—';
+  const pRenk  = pSeviye ? '#' + pSeviye.color : 'var(--muted2)';
+  const pTitle = pSeviye ? ` title="Belirleyici metrik: ${pSeviye.belirleyen || '—'}"` : '';
   return `
     <div style="font-size:12px;line-height:2">
-      <div><span style="color:var(--muted)">Verimlilik:</span> <strong style="font-size:14px;color:${vRenk}"${vTitle}>${vMetin}</strong></div>
+      <div><span style="color:var(--muted)">Performans:</span> <strong style="font-size:14px;color:${pRenk}"${pTitle}>${pMetin}</strong></div>
       <div><span style="color:var(--muted)">İkinci Insp.:</span> <strong style="font-size:14px;color:${renk(veri.ikinciInsp)}">${veri.ikinciInsp !== null && veri.ikinciInsp !== undefined ? veri.ikinciInsp + '%' : '—'}</strong></div>
       <div><span style="color:var(--muted)">Teknik Skor:</span> <strong style="font-size:14px;color:${renk(veri.teknikSkor)}">${veri.teknikSkor !== null && veri.teknikSkor !== undefined ? veri.teknikSkor + '%' : '—'}</strong></div>
       <div><span style="color:var(--muted)">Günlük Ort. (Normal):</span> <strong style="font-size:14px;color:var(--navy)">${veri.gunlukOrtNormal !== null && veri.gunlukOrtNormal !== undefined ? formatTR(veri.gunlukOrtNormal) + ' adet' : '—'}</strong></div>
@@ -3797,25 +3980,56 @@ function _ceyrekKpiSayfaZeminiYaz(ws, satirSayisi, kolonSayisi) {
 
 // ── Çeyrek Performans Arşivi: Excel'e Aktar ─────────────────────────────
 // Ekrandaki tabloyla AYNI filtreyi (arama + ekip yöneticisi) uygular, sonra
-// her inspector için "referans seviye"yi (İyi/Orta/Gelişime Açık/Zayıf)
-// belirler — bu, o an içinde bulunulan çeyrekten geriye doğru bakarak
-// bulunan İLK dolu (veri girilmiş) çeyreğin Verimlilik değerine göre
-// hesaplanır (yani en güncel bilinen durum). Rapor: bir görsel "KPI Özeti"
-// kart sayfası, bir "Özet" sayfası, tüm çeyreklerin göründüğü bir "Tüm
-// Veriler" sayfası, ve her seviye için AYRI birer sayfa (İyi / Orta /
-// Gelişime Açık / Zayıf) içerir.
-function _ceyrekSeviyeFromVerimlilik(v) {
-  // ceyrekArsivi'ndeki 'verimlilik' değeri zaten adet-bazlı % olarak
-  // saklanıyor (getEfektifPerfSeviye(...).adetBazliPerf — 450/gün hedefine
-  // göre). Aynı fonksiyonun eşiklerinin (Fark Yaratan >450, İyi 400-450,
-  // Orta 360-399, Gelişime Açık 300-359, Zayıf <300 adet/gün) % karşılığı:
-  // >450 → >%100, 400/450≈%89, 360/450=%80, 300/450≈%67.
-  if (v === null || v === undefined) return null;
-  if (v > 100) return { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE' };
-  if (v >= 89) return { key: 'iyi',    label: 'İyi',           color: '2563EB', bg: 'E3F2FD' };
-  if (v >= 80) return { key: 'orta',   label: 'Orta',          color: 'F57F17', bg: 'FFF8E1' };
-  if (v >= 67) return { key: 'acik',   label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE' };
-  return              { key: 'zayif',  label: 'Zayıf',         color: 'B71C1C', bg: 'FFEBEE' };
+// her inspector için "referans seviye"yi (Fark Yaratan/İyi/Orta/Gelişime
+// Açık/Zayıf) belirler — bu, o an içinde bulunulan çeyrekten geriye doğru
+// bakarak bulunan İLK dolu (veri girilmiş) çeyreğin Performans değerine
+// göre hesaplanır (yani en güncel bilinen durum). Rapor: bir görsel "KPI
+// Özeti" kart sayfası, bir "Özet" sayfası, tüm çeyreklerin göründüğü bir
+// "Tüm Veriler" sayfası, ve her seviye için AYRI birer sayfa içerir.
+
+// Seviye meta bilgisi — sıralama (sira) en düşüğü bulmak için kullanılır:
+// bir seviyeye ulaşmak için elde VERİSİ OLAN tüm metrikler o seviyeyi
+// karşılamalıdır (yani en zayıf metrik genel sonucu belirler).
+const CEYREK_SEVIYE_META = {
+  farkyaratan: { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE', sira: 4 },
+  iyi:         { key: 'iyi',         label: 'İyi',           color: '2563EB', bg: 'E3F2FD', sira: 3 },
+  orta:        { key: 'orta',        label: 'Orta',          color: 'F57F17', bg: 'FFF8E1', sira: 2 },
+  acik:        { key: 'acik',        label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE', sira: 1 },
+  zayif:       { key: 'zayif',       label: 'Zayıf',         color: 'B71C1C', bg: 'FFEBEE', sira: 0 }
+};
+
+// Tek bir metrik değerini (ör. Teknik Skor: 94), o metriğin kayıtlı
+// eşiklerine (ceyrekEsikleri[metrikKey]) göre bir seviyeye çevirir.
+function _ceyrekMetrikSeviye(deger, metrikKey) {
+  if (deger === null || deger === undefined) return null;
+  const esik = ceyrekEsikleri[metrikKey];
+  if (!esik) return null;
+  if (deger > esik.farkYaratan) return CEYREK_SEVIYE_META.farkyaratan;
+  if (deger >= esik.iyi)        return CEYREK_SEVIYE_META.iyi;
+  if (deger >= esik.orta)       return CEYREK_SEVIYE_META.orta;
+  if (deger >= esik.acik)       return CEYREK_SEVIYE_META.acik;
+  return CEYREK_SEVIYE_META.zayif;
+}
+
+const CEYREK_METRIK_ADI = { gunlukOrt: 'Günlük Ort.', teknikSkor: 'Teknik Skor', ikinciInsp: 'İkinci Insp' };
+
+// Bir çeyrek kaydının (gunlukOrtNormal/teknikSkor/ikinciInsp) GENEL
+// "Performans" seviyesini döner — kullanıcı talebiyle: sayfa üstündeki
+// "⚖️ Performans Kriterleri (Ağırlıklar)" panelinde tanımlı eşiklere göre,
+// veri bulunan metriklerin EN DÜŞÜK seviyesi esas alınır (bir seviyeye
+// ulaşmak için mevcut TÜM metrikler o seviyeyi karşılamalı). Veri olmayan
+// ("—") metrikler hesaba katılmaz.
+function _ceyrekGenelSeviye(veri) {
+  if (!veri) return null;
+  const adaylar = [
+    { metrik: 'gunlukOrt',  seviye: _ceyrekMetrikSeviye(veri.gunlukOrtNormal, 'gunlukOrt') },
+    { metrik: 'teknikSkor', seviye: _ceyrekMetrikSeviye(veri.teknikSkor, 'teknikSkor') },
+    { metrik: 'ikinciInsp', seviye: _ceyrekMetrikSeviye(veri.ikinciInsp, 'ikinciInsp') }
+  ].filter(a => a.seviye);
+  if (!adaylar.length) return null;
+  const enDusuk = adaylar.reduce((en, a) => a.seviye.sira < en.seviye.sira ? a : en, adaylar[0]);
+  // belirleyen: sonucu belirleyen (en zayıf) metriğin adı — tooltip'te gösterilir
+  return { ...enDusuk.seviye, belirleyen: CEYREK_METRIK_ADI[enDusuk.metrik] };
 }
 
 function _ceyrekReferansSeviye(kayit) {
@@ -3826,12 +4040,14 @@ function _ceyrekReferansSeviye(kayit) {
   for (let i = 0; i < 4; i++) {
     const q = siraQ[(startIdx - i + 4) % 4];
     const veri = kayit[q];
-    if (veri && veri.verimlilik !== null && veri.verimlilik !== undefined) {
-      return { ceyrek: q, veri, seviye: _ceyrekSeviyeFromVerimlilik(veri.verimlilik) };
+    if (veri) {
+      const seviye = _ceyrekGenelSeviye(veri);
+      if (seviye) return { ceyrek: q, veri, seviye };
     }
   }
   return { ceyrek: null, veri: null, seviye: null };
 }
+
 
 function _ceyrekExcelHeaderStyle() {
   return {
@@ -3961,11 +4177,12 @@ function exportCeyrekArsiviToExcel() {
     const fmtV = v => (v === null || v === undefined) ? '—' : v + '%';
     // Günlük Ort. (Normal Saatte) bir adet değeri — % değil, sonuna "adet" eklenir.
     const fmtAdet = v => (v === null || v === undefined) ? '—' : formatTR(v) + ' adet';
-    // Verimlilik artık Excel'de de ekrandaki gibi İyi/Orta/Gelişime Açık/Zayıf
-    // etiketiyle gösteriliyor — ham yüzde değil.
-    const fmtVSeviye = v => {
-      if (v === null || v === undefined) return '—';
-      const s = _ceyrekSeviyeFromVerimlilik(v);
+    // Performans (eski adıyla Verimlilik) artık Excel'de de ekrandaki gibi
+    // Fark Yaratan/İyi/Orta/Gelişime Açık/Zayıf etiketiyle gösteriliyor —
+    // 3 metriğin (Günlük Ort./Teknik Skor/İkinci Insp) BİRLİKTE
+    // değerlendirilmesiyle (bkz. _ceyrekGenelSeviye) hesaplanır.
+    const fmtVSeviye = veri => {
+      const s = _ceyrekGenelSeviye(veri);
       return s ? s.label : '—';
     };
 
@@ -3998,7 +4215,7 @@ function exportCeyrekArsiviToExcel() {
 
       const genelKartlar = [
         { baslik: '👥 TOPLAM INSPECTOR',     deger: String(toplamInspector),                             alt: 'aktif kayıt',                                accent: '0B1F3A', light: 'E1E7F0', bar: undefined },
-        { baslik: '⚡ ORT. VERİMLİLİK',       deger: ortVerimlilik  !== null ? ortVerimlilik + '%'  : '—', alt: 'referans çeyrek',                            accent: tV.accent, light: tV.light, bar: ortVerimlilik },
+        { baslik: '⚡ ORT. GÜNLÜK PERF. (%)', deger: ortVerimlilik  !== null ? ortVerimlilik + '%'  : '—', alt: 'referans çeyrek',                            accent: tV.accent, light: tV.light, bar: ortVerimlilik },
         { baslik: '🔁 ORT. İKİNCİ INSP.',     deger: ortIkinciInsp  !== null ? ortIkinciInsp + '%'  : '—', alt: 'referans çeyrek',                            accent: tI.accent, light: tI.light, bar: ortIkinciInsp },
         { baslik: '🎯 ORT. TEKNİK SKOR',      deger: ortTeknikSkor  !== null ? ortTeknikSkor + '%'  : '—', alt: 'referans çeyrek',                            accent: tT.accent, light: tT.light, bar: ortTeknikSkor },
         { baslik: '🚀 İYİ + FARK YARATAN',    deger: pctIyiUstu + '%',                                     alt: `${sayac.farkyaratan + sayac.iyi} inspector`, accent: '00897B', light: 'E0F2F1', bar: pctIyiUstu },
@@ -4053,7 +4270,7 @@ function exportCeyrekArsiviToExcel() {
         const satirlar = kayitlarQ.length
           ? [
               { text: `${kayitlarQ.length} inspector`, size: 13, bold: true },
-              { text: `Verimlilik: ${avgV !== null ? avgV + '%' : '—'}`, size: 10, bold: true, color: tv.accent },
+              { text: `Gün. Perf.: ${avgV !== null ? avgV + '%' : '—'}`, size: 10, bold: true, color: tv.accent },
               { text: `İkinci Insp.: ${avgI !== null ? avgI + '%' : '—'}`, size: 10, bold: true, color: ti.accent },
               { text: `Teknik Skor: ${avgT !== null ? avgT + '%' : '—'}`, size: 10, bold: true, color: tt.accent },
               { text: `Gün. Ort.: ${avgA !== null ? formatTR(avgA) + ' adet' : '—'}`, size: 10, bold: false }
@@ -4099,7 +4316,7 @@ function exportCeyrekArsiviToExcel() {
       };
       QC.forEach(q => {
         const v = k[q];
-        row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.verimlilik) : '—';
+        row[`${q} Performans`]   = v ? fmtVSeviye(v) : '—';
         row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
         row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
         row[`${q} Günlük Ort. (Normal)`] = v ? fmtAdet(v.gunlukOrtNormal) : '—';
@@ -4140,7 +4357,7 @@ function exportCeyrekArsiviToExcel() {
         };
         QC.forEach(q => {
           const v = k[q];
-          row[`${q} Verimlilik`]   = v ? fmtVSeviye(v.verimlilik) : '—';
+          row[`${q} Performans`]   = v ? fmtVSeviye(v) : '—';
           row[`${q} İkinci Insp.`] = v ? fmtV(v.ikinciInsp)  : '—';
           row[`${q} Teknik Skor`]  = v ? fmtV(v.teknikSkor)  : '—';
           row[`${q} Günlük Ort. (Normal)`] = v ? fmtAdet(v.gunlukOrtNormal) : '—';
@@ -4149,7 +4366,7 @@ function exportCeyrekArsiviToExcel() {
       });
 
       const bosSatir = { 'Inspector': 'Bu seviyede inspector bulunamadı', 'Referans Çeyrek': '' };
-      QC.forEach(q => { bosSatir[`${q} Verimlilik`] = ''; bosSatir[`${q} İkinci Insp.`] = ''; bosSatir[`${q} Teknik Skor`] = ''; bosSatir[`${q} Günlük Ort. (Normal)`] = ''; });
+      QC.forEach(q => { bosSatir[`${q} Performans`] = ''; bosSatir[`${q} İkinci Insp.`] = ''; bosSatir[`${q} Teknik Skor`] = ''; bosSatir[`${q} Günlük Ort. (Normal)`] = ''; });
 
       const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [bosSatir]);
       ws['!cols'] = [{ wch: 24 }, { wch: 16 }].concat(
@@ -7260,6 +7477,12 @@ updateSidebar();
 loadCeyrekArsivi().then(() => {
   try { localStorage.setItem('ceyrek_arsivi', JSON.stringify(ceyrekArsivi)); } catch(e) {}
   if (document.getElementById('page-ceyrek-performans')?.classList.contains('active')) {
+    renderCeyrekPerformansTablosu();
+  }
+});
+loadCeyrekEsiklerFromServer().then(() => {
+  if (document.getElementById('page-ceyrek-performans')?.classList.contains('active')) {
+    if (typeof renderCeyrekEsikTablo === 'function') renderCeyrekEsikTablo();
     renderCeyrekPerformansTablosu();
   }
 });
