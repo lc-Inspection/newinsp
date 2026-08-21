@@ -20,7 +20,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<link rel="stylesheet" href="panel.css?v=20260821-perfkriter">
+<link rel="stylesheet" href="panel.css?v=20260821-puanlama">
 </head>
 <body>
 
@@ -626,7 +626,7 @@
         <div id="ceyrek-esik-body" style="display:none">
           <div class="card-body">
             <p style="font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.7">
-              Her performans seviyesi için 3 metrikte aranan <strong>minimum</strong> değeri belirleyin. Bir inspector'ın genel <strong>Performans</strong> durumu, elindeki verilerin (Günlük Ort., Teknik Skor, İkinci Insp) <strong>en düşük</strong> seviyesine göre belirlenir — yani bir seviyeye ulaşmak için mevcut TÜM metrikler o seviyeyi karşılamalıdır. Veri olmayan ("—") metrikler hesaba katılmaz. <strong>Zayıf</strong> satırı ayrıca girilmez — "Gelişime Açık" eşiğinin altındaki her değer otomatik olarak Zayıf sayılır.
+              Her performans seviyesi için 3 metrikte aranan <strong>minimum</strong> değeri belirleyin. Her metrik önce kendi eşiğine göre bir seviyeye ve puana çevrilir (<strong>Fark Yaratan = 5</strong>, <strong>İyi = 4</strong>, <strong>Orta = 3</strong>, <strong>Gelişime Açık = 2</strong>, <strong>Zayıf = 1</strong> puan). Bir inspector'ın genel <strong>Performans</strong> durumu, elindeki verisi olan metriklerin puanlarının <strong>aritmetik ortalaması</strong> alınıp en yakın tam sayıya yuvarlanarak belirlenir — örn. Günlük Ort. Fark Yaratan (5) + İkinci Insp Orta (3) → ortalama 4.0 → İyi. Veri olmayan ("—") metrikler ortalamaya katılmaz. <strong>Zayıf</strong> satırı ayrıca girilmez — "Gelişime Açık" eşiğinin altındaki her değer otomatik olarak Zayıf (1 puan) sayılır.
             </p>
             <div style="overflow-x:auto">
               <table style="width:100%;border-collapse:collapse;min-width:520px">
@@ -1507,7 +1507,7 @@
 </div><!-- /app-shell -->
 
 <script src="panel2.js"></script>
-<script src="panel.js?v=20260821-perfkriter"></script>
+<script src="panel.js?v=20260821-puanlama"></script>
 
 <!-- ══════════════════════════════════════════════════════════
      ANALİZ TAM EKRAN OVERLAY
