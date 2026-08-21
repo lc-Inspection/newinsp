@@ -11523,27 +11523,39 @@ function exportIkinciInspectionToExcel() {
   });
   if (!satirlar.length) { alert('⚠️ Filtreye uyan (dışa aktarılacak) kayıt yok.'); return; }
 
-  // Sütun sırası ve isimleri kullanıcının paylaştığı Excel formatıyla birebir
-  // eşleşecek şekilde ayarlandı: Sipariş Numarası, Oluşturan, Inspection
-  // Tarihi, Ana Tanım, Inspector, Yönetici, Talep Numarası, Talep Miktarı,
-  // AQL Miktarı, Nihai Sonuç.
-  const data = satirlar.map(r => ({
-    'Sipariş Numarası': r.siparisKodu || '',
-    'Oluşturan': _formatDisplayName(r.degerlendiren || ''),
-    'Inspection Tarihi': r.tarih || '',
-    'Ana Tanım': r.anaTanim || '',
-    'Inspector': _formatDisplayName(r.inspector || ''),
-    'Yönetici': _formatDisplayName(r.ekipYoneticisi || ''),
-    'Talep Numarası': r.talepNo || '',
-    'Talep Miktarı': r.talepMiktari || 0,
-    'AQL Miktarı': r.aqlMiktari || 0,
-    'Nihai Sonuç': r.sonuc || ''
-  }));
+  // Kullanıcının paylaştığı örnek Excel dosyasıyla (teknik_değerlendirme.xlsx)
+  // BİREBİR aynı başlıklar ve aynı sütun sırası — D, I, K sütunları o
+  // dosyada da boş bırakıldığı için burada da boş bırakılıyor.
+  //   A: Sipariş Numarası   B: Oluşturan        C: 2.ınspection Tarihi
+  //   D: (boş)              E: Ana Tanım        F: ınspector
+  //   G: Yönetici           H: Talep Numarası   I: (boş)
+  //   J: Talep Miktarı      K: (boş)            L: AQL Miktarı
+  //   M: Nihai Sonuç
+  const basliklar = [
+    'Sipariş Numarası', 'Oluşturan', '2.ınspection Tarihi', '',
+    'Ana Tanım', 'ınspector', 'Yönetici', 'Talep Numarası', '',
+    'Talep Miktarı', '', 'AQL Miktarı', 'Nihai Sonuç'
+  ];
+  const aoa = [basliklar].concat(satirlar.map(r => ([
+    r.siparisKodu || '',
+    _formatDisplayName(r.degerlendiren || ''),
+    r.tarih || '',
+    '',
+    r.anaTanim || '',
+    _formatDisplayName(r.inspector || ''),
+    _formatDisplayName(r.ekipYoneticisi || ''),
+    r.talepNo || '',
+    '',
+    r.talepMiktari || 0,
+    '',
+    r.aqlMiktari || 0,
+    r.sonuc || ''
+  ])));
 
   const workbook = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(data);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [
-    {wch:16},{wch:20},{wch:16},{wch:18},{wch:22},{wch:22},{wch:16},{wch:14},{wch:12},{wch:12}
+    {wch:14.5},{wch:20},{wch:18},{wch:4},{wch:18},{wch:20},{wch:20},{wch:16},{wch:4},{wch:14},{wch:4},{wch:10.5},{wch:14}
   ];
   XLSX.utils.book_append_sheet(workbook, ws, 'İkinci Inspection');
   const tarihStr = _bugununTarihiYerel();
