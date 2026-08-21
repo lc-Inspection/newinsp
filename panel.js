@@ -555,19 +555,23 @@ let klasmanlar = [];
 // Her çeyrek objesi: { verimlilik, ikinciInsp, teknikSkor, tarih }
 let ceyrekArsivi = {};
 
-// ── GÜNLÜK EK ADET (Normal Saatte) — manuel düzeltme ─────────────────────
-// "Performans Analizi" sayfasında bir inspector için girilip kaydedilen
-// "+N adet/gün" düzeltmesi. Excel'den GELMEZ, ayrı bir veritabanı tablosunda
-// kalıcı tutulur — bu sayede Excel her yeniden yüklendiğinde/hesaplandığında
-// KAYBOLMAZ. Yapı: { [inspectorKey]: { displayName, ekAdet, tarih } }
-// _gunlukEkAdetAl(ins) ile okunur; bu fonksiyon TÜM "Günlük Ort. (Normal
-// Saatte)" / "Günlük Ort. (Toplam)" hesaplandığı yerlerde (Dashboard
-// kartları, inspector detay kartı, ekip kartları, Çeyrek Verisi Gönder
-// anlık görüntüsü, Sheets'e Gönder) çağrılarak değeri her yere yansıtır.
-let gunlukEkAdet = {};
-function _gunlukEkAdetAl(inspectorAdi) {
-  const kayit = gunlukEkAdet[_ceyrekInspectorKey(inspectorAdi)];
-  return kayit ? (Number(kayit.ekAdet) || 0) : 0;
+// ── GÜNLÜK EK ADET (Normal Saatte) — manuel düzeltme (TÜM inspector'lara
+// ortak/global bir TEK değer) ─────────────────────────────────────────────
+// "Performans Analizi" sayfasında TEK bir kutuya girilip kaydedilen
+// "+N adet/gün" düzeltmesi. Excel'den GELMEZ, sunucuda kalıcı tutulur — bu
+// sayede Excel her yeniden yüklendiğinde/hesaplandığında KAYBOLMAZ. Yapı:
+// { ekAdet, tarih }. _gunlukEkAdetAl() ile okunur; bu fonksiyon TÜM
+// "Günlük Ort. (Normal Saatte)" / "Günlük Ort. (Toplam)" hesaplandığı
+// yerlerde (Dashboard kartları, inspector detay kartı, ekip kartları,
+// Çeyrek Verisi Gönder anlık görüntüsü, Sheets'e/Excel'e Gönder) çağrılarak
+// değeri her yere ve HER inspector'a AYNI ŞEKİLDE yansıtır.
+// NOT: Geriye dönük uyumluluk için fonksiyon hâlâ bir "inspectorAdi"
+// parametresi kabul eder (mevcut çağrı yerleri hiç değişmeden çalışmaya
+// devam etsin diye) ama artık bu parametre YOK SAYILIR — değer herkes
+// için aynıdır.
+let gunlukEkAdetGlobal = { ekAdet: 0, tarih: null };
+function _gunlukEkAdetAl(_inspectorAdiYokSayilir) {
+  return Number(gunlukEkAdetGlobal.ekAdet) || 0;
 }
 
 let nextId = 1;
@@ -3396,7 +3400,7 @@ async function _pushCeyrekArsiviToServer() {
 }
 
 // ── Günlük Ek Adet (Normal Saatte) — sunucudan çek / sunucuya kaydet ────
-// loadCeyrekArsivi() ile BİREBİR aynı desen.
+// Artık TEK, GLOBAL bir değer (tüm inspector'lara aynı şekilde uygulanır).
 async function loadGunlukEkAdet() {
   try {
     const url = appConfig.sheetsWebAppUrl;
@@ -3404,117 +3408,85 @@ async function loadGunlukEkAdet() {
     if (!url || !token) return;
     const data = await jsonpFetch(url, { action: 'getGunlukEkAdet', token });
     if (data && data.status === 'ok' && data.veri && typeof data.veri === 'object') {
-      gunlukEkAdet = data.veri;
+      gunlukEkAdetGlobal = {
+        ekAdet: Number(data.veri.ekAdet) || 0,
+        tarih: data.veri.tarih || null
+      };
     }
   } catch (e) {
     console.warn('Günlük ek adet çekme hatası:', e.message);
   }
 }
 
-// Tek bir inspector için ek adedi sunucuya yazar. ekAdet=0 gönderilirse
-// sunucu tarafı kaydı SİLER (bkz. api.php setGunlukEkAdet) — yani "0 yazıp
-// kaydet" dendiğinde inspector otomatik olarak normale döner.
-async function _gunlukEkAdetKaydet(inspectorAdi, ekAdet) {
+// Global ek adedi sunucuya yazar. ekAdet=0 gönderilirse sunucu tarafı
+// düzeltmeyi SİLER (bkz. api.php setGunlukEkAdet) — yani "0 yazıp kaydet"
+// dendiğinde TÜM inspector'lar otomatik olarak normale döner.
+async function _gunlukEkAdetKaydet(ekAdet) {
   const url = appConfig.sheetsWebAppUrl;
   const token = appConfig.sheetsApiToken;
   if (!url || !token) throw new Error('Sunucu bağlantı ayarları eksik (appConfig.sheetsWebAppUrl / sheetsApiToken).');
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'setGunlukEkAdet', token, inspectorAdi, ekAdet })
+    body: JSON.stringify({ action: 'setGunlukEkAdet', token, ekAdet })
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const resp = await res.json();
   if (!resp || resp.status !== 'ok') throw new Error(resp?.message || 'kaydetme hatası');
-  const key = _ceyrekInspectorKey(inspectorAdi);
-  if (!ekAdet) {
-    delete gunlukEkAdet[key];
-  } else {
-    gunlukEkAdet[key] = { displayName: inspectorAdi, ekAdet: Number(ekAdet) };
-  }
-  try { localStorage.setItem('gunluk_ek_adet', JSON.stringify(gunlukEkAdet)); } catch(e) {}
+  gunlukEkAdetGlobal = { ekAdet: Number(ekAdet) || 0, tarih: resp.savedAt || new Date().toISOString() };
+  try { localStorage.setItem('gunluk_ek_adet', JSON.stringify(gunlukEkAdetGlobal)); } catch(e) {}
   return resp;
 }
 
 // ── Günlük Ek Adet (Normal Saatte) — "Performans Analizi" sayfasındaki
-// düzenleme tablosu. Her inspector için: baz (Excel'den hesaplanan, düzeltme
-// UYGULANMAMIŞ) günlük ortalama + kaydedilebilir bir "ek adet" inputu +
-// düzeltme uygulanmış sonuç gösterir.
+// TEK kutu. Girilen değer TÜM inspector'ların "Günlük Ort. (Normal Saatte)"
+// ve "Günlük Ort. (Toplam)" değerlerine aynı şekilde eklenir.
 function renderGunlukEkAdetTablosu() {
   const el = document.getElementById('gunluk-ek-adet-tablo');
   if (!el) return;
-  if (!performansData || !performansData.length) {
-    el.innerHTML = `<p style="font-size:12px;color:var(--muted);padding:12px 0">Önce Excel yükleyip performans hesaplaması yapın — inspector listesi burada görünecek.</p>`;
-    return;
-  }
-  const arama = (document.getElementById('gunluk-ek-adet-arama')?.value || '').toLowerCase().trim();
-  const liste = performansData
-    .filter(insp => !arama || (insp.ins || '').toLowerCase().includes(arama))
-    .slice()
-    .sort((a, b) => (a.ins || '').localeCompare(b.ins || '', 'tr'));
-
-  if (!liste.length) {
-    el.innerHTML = `<p style="font-size:12px;color:var(--muted);padding:12px 0">Arama sonucunda inspector bulunamadı.</p>`;
-    return;
-  }
-
-  const satirlar = liste.map((insp, idx) => {
-    const gunSayisi = insp.gunSayisi || 0;
-    const normalAdet = (insp.toplamAdetGercek ?? insp.adet ?? 0) - (insp.toplamOvertimeAdet || 0);
-    const bazOrt = gunSayisi > 0 ? Math.round(normalAdet / gunSayisi) : 0;
-    const mevcutEk = _gunlukEkAdetAl(insp.ins);
-    const inputId = 'gek-inp-' + idx;
-    const jsName = insp.ins.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    return `
-      <tr style="border-bottom:1px solid var(--border2)">
-        <td style="padding:8px 12px;font-weight:600;color:var(--navy)">${_escapeHtml(insp.ins)}</td>
-        <td style="padding:8px 12px;text-align:center;color:var(--muted)">${formatTR(bazOrt)} adet</td>
-        <td style="padding:8px 12px;text-align:center">
-          <input type="number" id="${inputId}" value="${mevcutEk}" step="1"
-            style="width:80px;text-align:center;padding:6px 8px;border:1.5px solid var(--border);border-radius:7px;font-size:13px">
-        </td>
-        <td style="padding:8px 12px;text-align:center;font-weight:700;color:${mevcutEk ? 'var(--blue)' : 'var(--muted)'}">
-          ${formatTR(bazOrt + mevcutEk)} adet
-          ${mevcutEk ? `<div style="font-size:10px;font-weight:400;color:var(--muted2)">baz ${formatTR(bazOrt)} ${mevcutEk >= 0 ? '+' : ''}${formatTR(mevcutEk)}</div>` : ''}
-        </td>
-        <td style="padding:8px 12px;text-align:center">
-          <button class="btn btn-success" style="padding:6px 14px;font-size:12px" id="${inputId}-btn"
-            onclick="gunlukEkAdetKaydetHandler('${inputId}', '${jsName}', this)">💾 Kaydet</button>
-        </td>
-      </tr>`;
-  }).join('');
+  const mevcutEk = _gunlukEkAdetAl();
+  const sonGuncelleme = gunlukEkAdetGlobal.tarih ? new Date(gunlukEkAdetGlobal.tarih) : null;
+  const sonGuncellemeStr = (sonGuncelleme && !isNaN(sonGuncelleme.getTime()))
+    ? sonGuncelleme.toLocaleDateString('tr-TR', {day:'2-digit',month:'2-digit',year:'numeric'}) +
+      ' ' + sonGuncelleme.toLocaleTimeString('tr-TR', {hour:'2-digit',minute:'2-digit'})
+    : null;
 
   el.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead>
-        <tr style="border-bottom:2px solid var(--border);text-align:left">
-          <th style="padding:8px 12px">Inspector</th>
-          <th style="padding:8px 12px;text-align:center">Baz Günlük Ort. (Normal)</th>
-          <th style="padding:8px 12px;text-align:center">Ek Adet</th>
-          <th style="padding:8px 12px;text-align:center">Sonuç (Baz + Ek)</th>
-          <th style="padding:8px 12px;text-align:center"></th>
-        </tr>
-      </thead>
-      <tbody>${satirlar}</tbody>
-    </table>`;
+    <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
+      <div>
+        <label for="gek-global-input" style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">
+          Tüm Inspector'lara Uygulanacak Ek Adet
+        </label>
+        <input type="number" id="gek-global-input" value="${mevcutEk}" step="1"
+          style="width:130px;text-align:center;padding:9px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-weight:700">
+      </div>
+      <button class="btn btn-success" style="padding:10px 20px;font-size:13px" id="gek-global-btn"
+        onclick="gunlukEkAdetKaydetHandler(this)">💾 Kaydet</button>
+      <div style="font-size:12.5px;color:var(--muted);padding-bottom:4px">
+        ${mevcutEk
+          ? `Şu an <strong style="color:var(--blue)">${mevcutEk >= 0 ? '+' : ''}${formatTR(mevcutEk)} adet/gün</strong> tüm inspector'lara uygulanıyor.`
+          : `Şu an aktif bir düzeltme yok (0 — normal değerler kullanılıyor).`}
+        ${sonGuncellemeStr ? `<div style="font-size:11px;color:var(--muted2);margin-top:2px">Son güncelleme: ${sonGuncellemeStr}</div>` : ''}
+      </div>
+    </div>`;
 }
 
 // "💾 Kaydet" butonunun handler'ı. Kaydettikten sonra, bu değerden etkilenen
-// TÜM ekranları (Dashboard kartları, performans tablosu, bu tablonun kendisi)
-// yeniden çizerek düzeltmenin anında her yere yansımasını sağlar.
-async function gunlukEkAdetKaydetHandler(inputId, inspectorAdi, btn) {
-  const input = document.getElementById(inputId);
+// TÜM ekranları (Dashboard kartları, performans tablosu, bu kutunun kendisi)
+// yeniden çizerek düzeltmenin anında her yere ve TÜM inspector'lara
+// yansımasını sağlar.
+async function gunlukEkAdetKaydetHandler(btn) {
+  const input = document.getElementById('gek-global-input');
   if (!input) return;
   const ekAdet = parseInt(input.value, 10) || 0;
-  const origText = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳...';
   try {
-    await _gunlukEkAdetKaydet(inspectorAdi, ekAdet);
+    await _gunlukEkAdetKaydet(ekAdet);
     btn.textContent = ekAdet ? '✅ Kaydedildi' : '✅ Normale döndü';
     renderDashboard();
     if (typeof renderPerfTabloFromData === 'function') renderPerfTabloFromData(typeof _perfPage !== 'undefined' ? _perfPage : 1);
     renderGunlukEkAdetTablosu();
-    setTimeout(() => { if (document.getElementById(inputId + '-btn')) { btn.textContent = '💾 Kaydet'; btn.disabled = false; } }, 1400);
+    setTimeout(() => { const b = document.getElementById('gek-global-btn'); if (b) { b.textContent = '💾 Kaydet'; b.disabled = false; } }, 1400);
   } catch (e) {
     btn.textContent = '❌ Hata';
     btn.disabled = false;
@@ -4993,6 +4965,16 @@ function exportToExcel() {
     const ti = getTeknikIncelemeSkorForInspector(inspector.ins);
     const ii = getIkinciInspectionOraniForInspector(inspector.ins);
 
+    // Günlük Ort. (Normal Saatte) / (Toplam) — Dashboard/kartlarla BİREBİR
+    // aynı formül (bkz. getEfektifPerfSeviye / renderEkipDetay), "Günlük Ek
+    // Adet" düzeltmesi (_gunlukEkAdetAl, artık TÜM inspector'lara ortak/global
+    // tek bir değer) dahil.
+    const _gunSayisiEx  = inspector.gunSayisi || 0;
+    const _normalAdetEx = (inspector.toplamAdetGercek ?? inspector.adet ?? 0) - (inspector.toplamOvertimeAdet || 0);
+    const _ekAdetEx     = _gunlukEkAdetAl(inspector.ins);
+    const _gunlukOrtNormalEx = (_gunSayisiEx > 0 ? Math.round(_normalAdetEx / _gunSayisiEx) : 0) + _ekAdetEx;
+    const _gunlukOrtToplamEx = (_gunSayisiEx > 0 ? Math.round((inspector.toplamAdetGercek ?? inspector.adet ?? 0) / _gunSayisiEx) : 0) + _ekAdetEx;
+
     return {
       'Inspector': inspector.ins,
       'Toplam Adet': inspector.adet,
@@ -5004,6 +4986,8 @@ function exportToExcel() {
       'İkinci Insp. Geçti/Toplam Oranı (%)': ii.percent !== null ? ii.percent : '—',
       'Klasman Sayısı': Object.keys(inspector.klasmanlar).length,
       'Çalışma Gün Sayısı': inspector.gunSayisi || 0,
+      'Günlük Ort. (Normal Saatte)': _gunlukOrtNormalEx,
+      'Günlük Ort. (Toplam)': _gunlukOrtToplamEx,
       'Overtime Performans (%)': (inspector.overtimePerformans !== null && inspector.overtimePerformans !== undefined) ? inspector.overtimePerformans : '—',
       'Overtime Kontrol Edilen Adet': inspector.toplamOvertimeAdet || 0,
       '2.Kalite Kontrolü: Adet': inspector.toplam2KaliteAdet || 0,
@@ -5216,12 +5200,23 @@ function exportInspectorDetail() {
   const duzPerf  = (_adetOzet > 0 && _beklenenAdetOzet > 0)
     ? Math.round((_adetOzet / _beklenenAdetOzet) * 100 * (100 / hedef))
     : Math.round(hamPerf * (100 / hedef));
+  // Günlük Ort. (Normal Saatte) / (Toplam) — Dashboard/kartlarla BİREBİR
+  // aynı formül, "Günlük Ek Adet" düzeltmesi (artık TÜM inspector'lara
+  // ortak/global tek bir değer) dahil.
+  const _gunSayisiOzet  = inspector.gunSayisi || 0;
+  const _normalAdetOzet = (inspector.toplamAdetGercek ?? inspector.adet ?? 0) - (inspector.toplamOvertimeAdet || 0);
+  const _ekAdetOzet     = _gunlukEkAdetAl(inspector.ins);
+  const _gunlukOrtNormalOzet = (_gunSayisiOzet > 0 ? Math.round(_normalAdetOzet / _gunSayisiOzet) : 0) + _ekAdetOzet;
+  const _gunlukOrtToplamOzet = (_gunSayisiOzet > 0 ? Math.round((inspector.toplamAdetGercek ?? inspector.adet ?? 0) / _gunSayisiOzet) : 0) + _ekAdetOzet;
+
   const genelRows = [
     { 'Alan': 'Inspector Adı',        'Değer': inspector.ins },
     { 'Alan': 'Toplam Adet',          'Değer': inspector.adet || 0 },
     { 'Alan': 'Toplam Kayıt',         'Değer': inspector.kayit || 0 },
     { 'Alan': 'Klasman Sayısı',       'Değer': Object.keys(inspector.klasmanlar).length },
     { 'Alan': 'Çalışma Gün Sayısı',   'Değer': inspector.gunSayisi || 0 },
+    { 'Alan': 'Günlük Ort. (Normal Saatte)', 'Değer': _gunlukOrtNormalOzet },
+    { 'Alan': 'Günlük Ort. (Toplam)',        'Değer': _gunlukOrtToplamOzet },
     { 'Alan': 'Standart Süre',        'Değer': fmtSnExcel(inspector.standartSure) },
     { 'Alan': 'Mesai Süresi',         'Değer': fmtSnExcel(inspector.mesaiSure) },
     { 'Alan': 'Ham Hız Performansı',  'Değer': hamPerf !== null ? hamPerf + '%' : '—' },
@@ -7242,10 +7237,10 @@ try {
   const _ceyrekLocal = localStorage.getItem('ceyrek_arsivi');
   if (_ceyrekLocal) ceyrekArsivi = JSON.parse(_ceyrekLocal);
 } catch(e) {}
-// Günlük Ek Adet düzeltmelerini de aynı desenle (localStorage → sunucu) yükle
+// Günlük Ek Adet düzeltmesini de aynı desenle (localStorage → sunucu) yükle
 try {
   const _gunlukEkLocal = localStorage.getItem('gunluk_ek_adet');
-  if (_gunlukEkLocal) gunlukEkAdet = JSON.parse(_gunlukEkLocal);
+  if (_gunlukEkLocal) gunlukEkAdetGlobal = JSON.parse(_gunlukEkLocal);
 } catch(e) {}
 loadConfig();
 renderListe();
@@ -7260,7 +7255,7 @@ loadCeyrekArsivi().then(() => {
   }
 });
 loadGunlukEkAdet().then(() => {
-  try { localStorage.setItem('gunluk_ek_adet', JSON.stringify(gunlukEkAdet)); } catch(e) {}
+  try { localStorage.setItem('gunluk_ek_adet', JSON.stringify(gunlukEkAdetGlobal)); } catch(e) {}
   // Ek adet Dashboard kartlarındaki Günlük Ort. değerlerini etkilediği için
   // sunucudan taze veri geldikten sonra ilgili ekranları YENİDEN çiziyoruz
   // (ilk renderDashboard() çağrısı henüz localStorage cache'i bile
