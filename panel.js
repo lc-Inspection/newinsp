@@ -5054,16 +5054,23 @@ function renderInspectorCards() {
                 <span style="font-size:9px;color:var(--muted2)">(${ti.seviye})</span>
               </div>`;
           })()}
-          <div style="text-align:center">
-            <span style="font-size:11px;color:var(--muted2)">📊 </span>
-            <span style="font-size:12px;font-weight:600;color:var(--navy)">${klasmanCount} ${(translations[currentLang]||translations.tr).klasman_word}</span>
-            <span style="color:var(--border);margin:0 6px"> • </span>
-            <span style="font-size:11px;color:var(--muted2)">
-              <span data-i18n="efficiency_label">efficiency</span> &nbsp;•&nbsp;
-              <span style="color:var(--blue);font-weight:600">%100+</span> = <span data-i18n="above_target">above target</span> &nbsp;•&nbsp;
-              <span style="color:var(--amber);font-weight:600">%100-</span> = <span data-i18n="below_target">below target</span>
-            </span>
-          </div>
+          ${(() => {
+            // İkinci Inspection skoru (kullanıcı talebiyle eklendi) — Teknik
+            // İnceleme Skoru kutusuyla aynı stil, o an içinde bulunulan
+            // çeyreğin Geçti/Toplam oranını gösterir.
+            const ii = getIkinciInspectionOraniForInspector(inspector.ins);
+            if (!ii || ii.count === 0) {
+              return `<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin:6px 0;padding:5px 10px;background:rgba(0,0,0,.03);border-radius:7px">
+                <span style="font-size:11px;color:var(--muted2)">🔎 İkinci Inspection Skoru yok</span>
+              </div>`;
+            }
+            const iiColor = getProgressColor(ii.percent);
+            return `<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin:6px 0;padding:5px 10px;background:rgba(0,137,123,.08);border-radius:7px">
+                <span style="font-size:11px;color:#00695C">🔎 İkinci Inspection Skoru:</span>
+                <span style="font-size:13px;font-weight:700;color:${iiColor}">${ii.percent}%</span>
+                <span style="font-size:9px;color:var(--muted2)">(${ii.geciSayisi}/${ii.count} geçti)</span>
+              </div>`;
+          })()}
         </div>
 
         <!-- Klasman Detayları -->
