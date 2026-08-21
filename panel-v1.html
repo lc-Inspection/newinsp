@@ -575,20 +575,22 @@
         <div id="perf-tablo" style="display:none;overflow-x:auto"></div>
       </div>
 
-      <!-- Günlük Ek Adet (Normal Saatte) — manuel düzeltme (TÜM inspector'lara ortak/tek değer) -->
+      <!-- Günlük Ek Adet (Normal Saatte) — manuel düzeltme -->
       <div class="card" id="gunluk-ek-adet-card" style="margin-top:16px">
         <div class="card-header"><h2>🔧 Günlük Ek Adet (Normal Saatte) Düzeltmesi</h2></div>
         <div class="card-body">
           <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6">
-            Aşağıya bir sayı yazıp <strong>Kaydet</strong>'e basarsanız, <strong>TÜM inspector'ların</strong>
+            Bir inspector için buraya bir sayı yazıp <strong>Kaydet</strong>'e basarsanız, o inspector'ın
             <strong>Günlük Ort. (Normal Saatte)</strong> ve <strong>Günlük Ort. (Toplam)</strong>
             değerlerine GÜNLÜK olarak bu kadar adet eklenir. Bu düzeltme veritabanına kalıcı yazılır ve
             Dashboard kartları, inspector detay kartı, ekip kartları, Çeyrek Performans anlık görüntüsü ve
             Sheets'e/Excel'e giden veri dahil <strong>tüm alanlara</strong> otomatik yansır.
             Varsayılan değer <strong>0</strong>'dır (düzeltme yok); <strong>0 yazıp kaydederseniz düzeltme
-            kaldırılır ve tüm inspector'lar normale döner.</strong>
+            kaldırılır ve adet normale döner.</strong>
           </p>
-          <div id="gunluk-ek-adet-tablo"></div>
+          <input type="text" id="gunluk-ek-adet-arama" placeholder="Inspector adı ara..." oninput="renderGunlukEkAdetTablosu()"
+            style="width:100%;max-width:320px;margin-bottom:12px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">
+          <div id="gunluk-ek-adet-tablo" style="overflow-x:auto"></div>
         </div>
       </div>
     </div>
