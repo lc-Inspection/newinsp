@@ -8499,6 +8499,7 @@ async function saveIkinciInspection() {
     if (_el('ii-not'))           _el('ii-not').value = '';
     renderIkinciInspectionTablo();
     renderTiDashboard();
+    if (typeof renderTiEkipDashboard === 'function') renderTiEkipDashboard();
   } catch(e) {
     alert('Hata: ' + e.message);
   } finally {
@@ -10681,14 +10682,25 @@ async function loadTeknikInceleme() {
   const tiClearAllBtn = document.getElementById('ti-clear-all-btn');
   if (tiClearAllBtn) tiClearAllBtn.style.display = isAdmin ? '' : 'none';
 
+  // Değerlendirme Yap / İkinci Inspection Kaydı Gir formlarının gizle/göster
+  // durumunu (kullanıcı talebiyle) localStorage'dan geri yükle.
+  _tiRestoreFormVisibility();
+
   // Önbellekteki (localStorage) verilerle HEMEN çiz — ağ isteğini bekleme.
   renderTeknikKriterForm();
   renderTiSkorOzet();
   renderTiKayitlarTablo();
   renderIkinciInspectionTablo();
   renderTiDashboard();
+  renderTiEkipDashboard();
   if (isAdmin) {
     renderTiKriterYonetimList();
+  }
+
+  // Ekip bazlı özet için ekip yöneticisi/ekip üyesi eşlemesine ihtiyaç var —
+  // _usersCache boşsa sessizce çek (Kullanıcılar sekmesine girmeye gerek yok).
+  if (!_usersCache.length && typeof _silentLoadUsersCache === 'function') {
+    _silentLoadUsersCache().then(() => renderTiEkipDashboard());
   }
 
   await Promise.all([fetchTeknikKriterler(), fetchTeknikSkorlar(), fetchIkinciInspectionData(), fetchTeknikHedefler()]);
@@ -10698,8 +10710,243 @@ async function loadTeknikInceleme() {
   renderTiKayitlarTablo();
   renderIkinciInspectionTablo();
   renderTiDashboard();
+  renderTiEkipDashboard();
   if (isAdmin) {
     renderTiKriterYonetimList();
+  }
+}
+
+// ─── Değerlendirme Yap / İkinci Inspection Kaydı Gir formlarını gizle/göster
+// (kullanıcı talebiyle eklendi). Kapatıldığında sadece kart başlığı (renkli
+// çubuk) görünür kalır, form alanı tamamen kaybolur. Tercih cihazda kalıcıdır.
+const TI_FORM_GORUNURLUK_LS_KEY = 'ti_form_gorunurluk_v1';
+
+function toggleTiFormBody(bodyId, btnId) {
+  const body = document.getElementById(bodyId);
+  const btn = document.getElementById(btnId);
+  if (!body) return;
+  const gizleniyor = body.style.display !== 'none'; // şu an açıksa, bu tık kapatacak
+  body.style.display = gizleniyor ? 'none' : '';
+  if (btn) btn.innerHTML = gizleniyor ? '👁️ Göster' : '🙈 Gizle';
+  try {
+    const kayitli = JSON.parse(localStorage.getItem(TI_FORM_GORUNURLUK_LS_KEY) || '{}');
+    kayitli[bodyId] = !gizleniyor; // true = görünür
+    localStorage.setItem(TI_FORM_GORUNURLUK_LS_KEY, JSON.stringify(kayitli));
+  } catch(e) { /* localStorage yoksa sessizce geç */ }
+}
+
+function _tiRestoreFormVisibility() {
+  let kayitli = {};
+  try { kayitli = JSON.parse(localStorage.getItem(TI_FORM_GORUNURLUK_LS_KEY) || '{}'); } catch(e) { kayitli = {}; }
+  [
+    ['ti-degerlendirme-body', 'ti-degerlendirme-toggle-btn'],
+    ['ii-form-body', 'ii-form-toggle-btn']
+  ].forEach(([bodyId, btnId]) => {
+    if (kayitli[bodyId] === false) {
+      const body = document.getElementById(bodyId);
+      const btn = document.getElementById(btnId);
+      if (body) body.style.display = 'none';
+      if (btn) btn.innerHTML = '👁️ Göster';
+    }
+  });
+}
+
+// ─── Ekip Bazlı Performans Özeti (kullanıcı talebiyle eklendi) ───
+// Teknik İnceleme Skorları ve İkinci Inspection Kayıtlarını, inspector'ın
+// bağlı olduğu ekip yöneticisine göre gruplayıp, iki tarih aralığı ve
+// (opsiyonel) inspector filtresiyle ayrı ayrı özetler.
+
+// teknikSkorlar madde-madde (kriter satırı) tutulur; aynı "id"ye sahip
+// satırlar TEK bir değerlendirmeyi oluşturur. Bu fonksiyon, verilen satır
+// listesini değerlendirme bazında gruplayıp her biri için yüzdelik skor
+// hesaplar.
+function _tiDegerlendirmeBazindaGrupla(satirlar) {
+  const map = new Map();
+  satirlar.forEach(r => {
+    if (!map.has(r.id)) map.set(r.id, { id: r.id, inspector: r.inspector, tarih: r.tarih, maxToplam: 0, kazanilanToplam: 0 });
+    const g = map.get(r.id);
+    g.maxToplam += (Number(r.maxPuan) || 0);
+    g.kazanilanToplam += (Number(r.kazanilanPuan) || 0);
+  });
+  return Array.from(map.values()).map(g => ({
+    ...g,
+    percent: g.maxToplam > 0 ? Math.round((g.kazanilanToplam / g.maxToplam) * 100) : 0
+  }));
+}
+
+// Bir inspector isminin bağlı olduğu ekip yöneticisinin kullanıcı adını
+// döndürür (bkz. populateCeyrekEkipFiltre — aynı _usersCache[].team mantığı).
+// Eşleşme yoksa null döner.
+function _tiEkipYoneticisiBul(inspectorAdi) {
+  if (!inspectorAdi) return null;
+  const norm = String(inspectorAdi).toLocaleLowerCase('tr-TR').trim();
+  const yonetici = (_usersCache || []).find(u => (u.team || []).some(ad => String(ad).toLocaleLowerCase('tr-TR').trim() === norm));
+  return yonetici ? yonetici.username : null;
+}
+
+const TI_EKIP_ATANMAMIS_ETIKET = '— Atanmamış Ekip —';
+
+function _tiEkipTabloHtml(ekipMap, birimEtiket) {
+  if (!ekipMap.size) {
+    return `<div class="empty" style="padding:18px">
+      <div class="empty-icon">📊</div>
+      <h3 style="font-size:13px">Filtreye uyan kayıt bulunamadı</h3>
+    </div>`;
+  }
+  const ekipler = Array.from(ekipMap.entries()).sort((a, b) => {
+    if (a[0] === TI_EKIP_ATANMAMIS_ETIKET) return 1;
+    if (b[0] === TI_EKIP_ATANMAMIS_ETIKET) return -1;
+    return a[0].localeCompare(b[0], 'tr');
+  });
+  const rows = ekipler.map(([ad, g]) => {
+    const percent = g.toplam > 0 ? Math.round((g.basarili / g.toplam) * 100) : 0;
+    const color = typeof getProgressColor === 'function' ? getProgressColor(percent) : 'var(--navy)';
+    return `<tr>
+      <td style="padding:8px 10px;font-size:12.5px;color:var(--navy);font-weight:500">${_escapeHtml(ad)}</td>
+      <td style="padding:8px 10px;font-size:13px;font-weight:700;color:${color};white-space:nowrap">${percent}%</td>
+      <td style="padding:8px 10px;font-size:12px;color:var(--muted2);white-space:nowrap">${g.basarili} / ${g.toplam} ${birimEtiket}</td>
+    </tr>`;
+  }).join('');
+  return `<table style="width:100%;border-collapse:collapse">
+    <thead><tr style="border-bottom:2px solid var(--border2);background:var(--offwhite)">
+      <th style="text-align:left;padding:8px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase">Ekip</th>
+      <th style="text-align:left;padding:8px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase">Başarı Oranı</th>
+      <th style="text-align:left;padding:8px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase">Detay</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// Chart.js örneklerini burada tutuyoruz — her render'da eskisini destroy()
+// edip aynı <canvas> üzerine yenisini çiziyoruz (canvas elementleri innerHTML
+// ile silinmiyor, bu yüzden Chart.js referansları elde kalabiliyor).
+let _tiEkipChartlar = { skorBar: null, skorPasta: null, iiBar: null, iiPasta: null };
+
+function _tiEkipMapToLabelsData(ekipMap) {
+  const ekipler = Array.from(ekipMap.entries()).sort((a, b) => {
+    if (a[0] === TI_EKIP_ATANMAMIS_ETIKET) return 1;
+    if (b[0] === TI_EKIP_ATANMAMIS_ETIKET) return -1;
+    return a[0].localeCompare(b[0], 'tr');
+  });
+  const labels = ekipler.map(([ad]) => ad);
+  const percents = ekipler.map(([, g]) => g.toplam > 0 ? Math.round((g.basarili / g.toplam) * 100) : 0);
+  const colors = percents.map(p => typeof getProgressColor === 'function' ? getProgressColor(p) : '#1565C0');
+  let toplamBasarili = 0, toplamGenel = 0;
+  ekipler.forEach(([, g]) => { toplamBasarili += g.basarili; toplamGenel += g.toplam; });
+  return { labels, percents, colors, toplamBasarili, toplamGenel };
+}
+
+// Şerit (bar) grafik: ekip bazında başarı oranı (%) karşılaştırması.
+function _tiCizBarChart(canvasId, chartKey, labels, percents, colors) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (_tiEkipChartlar[chartKey]) { _tiEkipChartlar[chartKey].destroy(); _tiEkipChartlar[chartKey] = null; }
+  if (!labels.length) return;
+  _tiEkipChartlar[chartKey] = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label: 'Başarı Oranı (%)', data: percents, backgroundColor: colors, borderRadius: 5, maxBarThickness: 34 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      indexAxis: labels.length > 4 ? 'y' : 'x',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => ctx.formattedValue + '%' } }
+      },
+      scales: {
+        x: labels.length > 4 ? { min: 0, max: 100, ticks: { callback: v => v + '%' } } : { ticks: { autoSkip: false, font: { size: 10 } } },
+        y: labels.length > 4 ? { ticks: { autoSkip: false, font: { size: 10 } } } : { min: 0, max: 100, ticks: { callback: v => v + '%' } }
+      }
+    }
+  });
+  canvas.parentElement.style.height = Math.max(160, labels.length * 26) + 'px';
+}
+
+// Pasta (pie) grafik: genel başarılı / başarısız dağılımı (tüm ekipler toplamı).
+function _tiCizPastaChart(canvasId, chartKey, toplamBasarili, toplamGenel, basariEtiket, basarisizEtiket) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || typeof Chart === 'undefined') return;
+  if (_tiEkipChartlar[chartKey]) { _tiEkipChartlar[chartKey].destroy(); _tiEkipChartlar[chartKey] = null; }
+  if (!toplamGenel) return;
+  const basarisiz = toplamGenel - toplamBasarili;
+  _tiEkipChartlar[chartKey] = new Chart(canvas.getContext('2d'), {
+    type: 'pie',
+    data: {
+      labels: [basariEtiket, basarisizEtiket],
+      datasets: [{ data: [toplamBasarili, basarisiz], backgroundColor: ['#00897B', '#E53935'], borderWidth: 0 }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+        tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw / toplamGenel * 100)}%)` } }
+      }
+    }
+  });
+}
+
+function renderTiEkipDashboard() {
+  const wrapSkor = document.getElementById('ti-ekip-skor-wrap');
+  const wrapIi = document.getElementById('ti-ekip-ii-wrap');
+  if (!wrapSkor && !wrapIi) return;
+
+  const fBaslangic = document.getElementById('ti-ekip-baslangic')?.value || '';
+  const fBitis = document.getElementById('ti-ekip-bitis')?.value || '';
+  const fInspector = (document.getElementById('ti-ekip-filtre-inspector')?.value || '').trim().toLocaleLowerCase('tr-TR');
+
+  // ── 📊 Teknik İnceleme Skorları — ekip bazında: (85+ skor alan değerlendirme
+  // sayısı) / (toplam değerlendirme sayısı) ──
+  if (wrapSkor) {
+    const filtreliSatirlar = teknikSkorlar.filter(r => {
+      if (fBaslangic && (!r.tarih || r.tarih < fBaslangic)) return false;
+      if (fBitis && (!r.tarih || r.tarih > fBitis)) return false;
+      if (fInspector && !String(r.inspector || '').toLocaleLowerCase('tr-TR').includes(fInspector)) return false;
+      return true;
+    });
+    const degerlendirmeler = _tiDegerlendirmeBazindaGrupla(filtreliSatirlar);
+    const ekipMap = new Map();
+    degerlendirmeler.forEach(d => {
+      const yoneticiKullaniciAdi = _tiEkipYoneticisiBul(d.inspector);
+      const ekipAd = yoneticiKullaniciAdi ? _formatDisplayName(yoneticiKullaniciAdi) : TI_EKIP_ATANMAMIS_ETIKET;
+      if (!ekipMap.has(ekipAd)) ekipMap.set(ekipAd, { basarili: 0, toplam: 0 });
+      const g = ekipMap.get(ekipAd);
+      g.toplam++;
+      if (d.percent >= 85) g.basarili++;
+    });
+    const { labels, percents, colors, toplamBasarili, toplamGenel } = _tiEkipMapToLabelsData(ekipMap);
+    _tiCizBarChart('ti-ekip-skor-bar-chart', 'skorBar', labels, percents, colors);
+    _tiCizPastaChart('ti-ekip-skor-pie-chart', 'skorPasta', toplamBasarili, toplamGenel, '85+ Başarılı', 'Başarısız');
+    wrapSkor.innerHTML = _tiEkipTabloHtml(ekipMap, 'değerlendirme');
+  }
+
+  // ── 🔎 İkinci Inspection Kayıtları — ekip bazında: (başarılı / "Geçti"
+  // sonuçlu kayıt sayısı) / (toplam ikinci inspection kaydı) ──
+  if (wrapIi) {
+    const filtreliKayitlar = ikinciInspectionData.filter(r => {
+      if (fBaslangic && (!r.tarih || r.tarih < fBaslangic)) return false;
+      if (fBitis && (!r.tarih || r.tarih > fBitis)) return false;
+      if (fInspector && !String(r.inspector || '').toLocaleLowerCase('tr-TR').includes(fInspector)) return false;
+      return true;
+    });
+    const ekipMap = new Map();
+    filtreliKayitlar.forEach(r => {
+      // Kayıtta doğrudan seçilmiş bir ekip yöneticisi varsa onu kullan,
+      // yoksa inspector'ın bağlı olduğu ekibi bul.
+      const yoneticiKullaniciAdi = r.ekipYoneticisi || _tiEkipYoneticisiBul(r.inspector);
+      const ekipAd = yoneticiKullaniciAdi ? _formatDisplayName(yoneticiKullaniciAdi) : TI_EKIP_ATANMAMIS_ETIKET;
+      if (!ekipMap.has(ekipAd)) ekipMap.set(ekipAd, { basarili: 0, toplam: 0 });
+      const g = ekipMap.get(ekipAd);
+      g.toplam++;
+      if (r.sonuc === 'Geçti') g.basarili++;
+    });
+    const { labels, percents, colors, toplamBasarili, toplamGenel } = _tiEkipMapToLabelsData(ekipMap);
+    _tiCizBarChart('ti-ekip-ii-bar-chart', 'iiBar', labels, percents, colors);
+    _tiCizPastaChart('ti-ekip-ii-pie-chart', 'iiPasta', toplamBasarili, toplamGenel, 'Geçti', 'Kaldı');
+    wrapIi.innerHTML = _tiEkipTabloHtml(ekipMap, 'kayıt');
   }
 }
 
@@ -11216,6 +11463,7 @@ async function kaydetTeknikInceleme() {
     renderTiSkorOzet();
     if (!currentUser || currentUser.isAdmin) renderTiKayitlarTablo();
     renderTiDashboard();
+    if (typeof renderTiEkipDashboard === 'function') renderTiEkipDashboard();
     // Dashboard kartlarında da güncel görünsün
     if (typeof renderDashboard === 'function' && document.getElementById('inspector-grid')) renderDashboard();
   } catch(e) {
@@ -11831,6 +12079,7 @@ async function iiSeciliKayitlariSil() {
     _iiSeciliKayitlar.clear();
     renderIkinciInspectionTablo();
     if (typeof renderTiDashboard === 'function') renderTiDashboard();
+    if (typeof renderTiEkipDashboard === 'function') renderTiEkipDashboard();
     alert(`✅ ${resp.count ?? idler.length} kayıt silindi.`);
   } catch (err) {
     alert('❌ Silme sırasında hata oluştu: ' + err.message);
@@ -12080,6 +12329,7 @@ async function temizleTeknikVeIkinciInspectionVerileri() {
     renderTiKayitlarTablo();
     renderIkinciInspectionTablo();
     renderTiDashboard();
+    if (typeof renderTiEkipDashboard === 'function') renderTiEkipDashboard();
     if (typeof renderDashboard === 'function' && document.getElementById('inspector-grid')) renderDashboard();
     showSuccessMessage('✅ İkinci Inspection ve Teknik İnceleme kayıtları silindi!');
   } catch(e) {
