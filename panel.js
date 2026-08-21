@@ -10644,11 +10644,29 @@ async function fillIkinciInspectionDropdowns() {
   if (eySel) {
     if (!_usersCache.length) await _silentLoadUsersCache();
     const prev = eySel.value;
-    const isimler = _usersCache.map(u => u.username).slice().sort((a,b) => a.localeCompare(b, 'tr'));
+    // DÜZELTME (kullanıcı talebiyle): önceden BURADA sistemdeki TÜM kullanıcılar
+    // listeleniyordu (admin dahil, ekibi olmayan herkes) — bu, bir inspector'ın
+    // hiç ekip yöneticisi OLMAYAN birini (ör. Semiha, Ömer) yanlışlıkla "ekip
+    // yöneticisi" olarak seçebilmesine yol açıyordu ve Ekip Bazlı Performans
+    // Özeti'nde gerçek olmayan ekip başlıkları görünüyordu. Artık sadece
+    // gerçekten bir ekibi (team listesi) olan kullanıcılar seçilebilir.
+    const isimler = _usersCache.filter(u => (u.team || []).length > 0).map(u => u.username).slice().sort((a,b) => a.localeCompare(b, 'tr'));
     eySel.innerHTML = '<option value="">— Ekip yöneticisi seçin —</option>' +
       isimler.map(ad => `<option value="${_escapeHtml(ad)}">${_escapeHtml(_formatDisplayName(ad))}</option>`).join('');
     if (prev && isimler.includes(prev)) eySel.value = prev;
   }
+}
+
+// Ekip Bazlı Performans Özeti'ndeki inspector filtre dropdown'ını doldurur
+// (kullanıcı talebiyle: serbest metin yerine otomatik tamamlanan liste).
+function fillTiEkipInspectorFiltre() {
+  const sel = document.getElementById('ti-ekip-filtre-inspector');
+  if (!sel) return;
+  const prev = sel.value;
+  const isimler = performansData.map(i => i.ins).slice().sort((a, b) => a.localeCompare(b, 'tr'));
+  sel.innerHTML = '<option value="">🔎 Tüm Inspectorlar</option>' +
+    isimler.map(ad => `<option value="${_escapeHtml(ad)}">${_escapeHtml(_formatDisplayName(ad))}</option>`).join('');
+  if (prev && isimler.includes(prev)) sel.value = prev;
 }
 
 async function loadTeknikInceleme() {
@@ -10666,6 +10684,7 @@ async function loadTeknikInceleme() {
   // tamamen ortadan kaldırır.
   fillTeknikInspectorDropdown();
   fillIkinciInspectionDropdowns();
+  fillTiEkipInspectorFiltre();
 
   const adminWrap = document.getElementById('ti-admin-wrap');
   const isAdmin = !currentUser || currentUser.isAdmin;
@@ -10776,7 +10795,8 @@ function _tiDegerlendirmeBazindaGrupla(satirlar) {
 
 // Bir inspector isminin bağlı olduğu ekip yöneticisinin kullanıcı adını
 // döndürür (bkz. populateCeyrekEkipFiltre — aynı _usersCache[].team mantığı).
-// Eşleşme yoksa null döner.
+// Sadece GERÇEK ekip yöneticileri (team listesi dolu olan kullanıcılar)
+// eşleşir; eşleşme yoksa null döner.
 function _tiEkipYoneticisiBul(inspectorAdi) {
   if (!inspectorAdi) return null;
   const norm = String(inspectorAdi).toLocaleLowerCase('tr-TR').trim();
@@ -10784,7 +10804,17 @@ function _tiEkipYoneticisiBul(inspectorAdi) {
   return yonetici ? yonetici.username : null;
 }
 
-const TI_EKIP_ATANMAMIS_ETIKET = '— Atanmamış Ekip —';
+// Verilen kullanıcı adının _usersCache'te GERÇEKTEN bir ekip yöneticisi olup
+// olmadığını (yani en az 1 ekip üyesi olup olmadığını) doğrular. İkinci
+// Inspection kayıtlarındaki "ekipYoneticisi" alanı eskiden TÜM kullanıcılardan
+// serbestçe seçilebiliyordu (bkz. fillIkinciInspectionDropdowns düzeltmesi) —
+// bu yüzden geçmiş kayıtlarda ekip yöneticisi olmayan biri (ör. Semiha, Ömer)
+// yanlışlıkla seçilmiş olabilir. Böyle kayıtları ekip özetinde GERÇEK ekip
+// yöneticisi gibi göstermemek için bu doğrulama kullanılır.
+function _tiGercekYoneticiMi(kullaniciAdi) {
+  if (!kullaniciAdi) return false;
+  return (_usersCache || []).some(u => u.username === kullaniciAdi && (u.team || []).length > 0);
+}
 
 function _tiEkipTabloHtml(ekipMap, birimEtiket) {
   if (!ekipMap.size) {
@@ -10793,25 +10823,21 @@ function _tiEkipTabloHtml(ekipMap, birimEtiket) {
       <h3 style="font-size:13px">Filtreye uyan kayıt bulunamadı</h3>
     </div>`;
   }
-  const ekipler = Array.from(ekipMap.entries()).sort((a, b) => {
-    if (a[0] === TI_EKIP_ATANMAMIS_ETIKET) return 1;
-    if (b[0] === TI_EKIP_ATANMAMIS_ETIKET) return -1;
-    return a[0].localeCompare(b[0], 'tr');
-  });
+  const ekipler = Array.from(ekipMap.entries()).sort((a, b) => a[0].localeCompare(b[0], 'tr'));
   const rows = ekipler.map(([ad, g]) => {
     const percent = g.toplam > 0 ? Math.round((g.basarili / g.toplam) * 100) : 0;
     const color = typeof getProgressColor === 'function' ? getProgressColor(percent) : 'var(--navy)';
-    return `<tr>
-      <td style="padding:8px 10px;font-size:12.5px;color:var(--navy);font-weight:500">${_escapeHtml(ad)}</td>
-      <td style="padding:8px 10px;font-size:13px;font-weight:700;color:${color};white-space:nowrap">${percent}%</td>
-      <td style="padding:8px 10px;font-size:12px;color:var(--muted2);white-space:nowrap">${g.basarili} / ${g.toplam} ${birimEtiket}</td>
+    return `<tr class="ti-ekip-tablo-row" style="cursor:pointer" onmouseover="this.style.background='var(--offwhite)'" onmouseout="this.style.background=''">
+      <td style="padding:9px 10px;font-size:12.5px;color:var(--navy);font-weight:500">${_escapeHtml(ad)}</td>
+      <td style="padding:9px 10px;font-size:13px;font-weight:700;color:${color};white-space:nowrap">${percent}%</td>
+      <td style="padding:9px 10px;font-size:12px;color:var(--muted2);white-space:nowrap">${g.basarili} / ${g.toplam} ${birimEtiket}</td>
     </tr>`;
   }).join('');
   return `<table style="width:100%;border-collapse:collapse">
     <thead><tr style="border-bottom:2px solid var(--border2);background:var(--offwhite)">
-      <th style="text-align:left;padding:8px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase">Ekip</th>
-      <th style="text-align:left;padding:8px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase">Başarı Oranı</th>
-      <th style="text-align:left;padding:8px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase">Detay</th>
+      <th style="text-align:left;padding:9px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase">Ekip / Inspector</th>
+      <th style="text-align:left;padding:9px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase">Başarı Oranı</th>
+      <th style="text-align:left;padding:9px 10px;font-size:10.5px;color:var(--muted);text-transform:uppercase">Detay</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
@@ -10822,12 +10848,18 @@ function _tiEkipTabloHtml(ekipMap, birimEtiket) {
 // ile silinmiyor, bu yüzden Chart.js referansları elde kalabiliyor).
 let _tiEkipChartlar = { skorBar: null, skorPasta: null, iiBar: null, iiPasta: null };
 
+// Bar grafiğe tıklayınca pasta grafiği o tek ekip/inspector'a göre güncellemek
+// için, her render'da hesaplanan ekip verilerini burada saklıyoruz.
+let _tiEkipSonVeri = {
+  skor: { map: null, basarili: 0, toplam: 0, basariEtiket: '85+ Başarılı', basarisizEtiket: 'Başarısız' },
+  ii:   { map: null, basarili: 0, toplam: 0, basariEtiket: 'Geçti', basarisizEtiket: 'Kaldı' }
+};
+// Hangi bölümde ("skor" / "ii") şu an drill-down (tek ekibe odaklanmış pasta)
+// gösteriliyor — sıfırlama butonu için.
+let _tiEkipDrillAktif = { skor: false, ii: false };
+
 function _tiEkipMapToLabelsData(ekipMap) {
-  const ekipler = Array.from(ekipMap.entries()).sort((a, b) => {
-    if (a[0] === TI_EKIP_ATANMAMIS_ETIKET) return 1;
-    if (b[0] === TI_EKIP_ATANMAMIS_ETIKET) return -1;
-    return a[0].localeCompare(b[0], 'tr');
-  });
+  const ekipler = Array.from(ekipMap.entries()).sort((a, b) => a[0].localeCompare(b[0], 'tr'));
   const labels = ekipler.map(([ad]) => ad);
   const percents = ekipler.map(([, g]) => g.toplam > 0 ? Math.round((g.basarili / g.toplam) * 100) : 0);
   const colors = percents.map(p => typeof getProgressColor === 'function' ? getProgressColor(p) : '#1565C0');
@@ -10836,8 +10868,10 @@ function _tiEkipMapToLabelsData(ekipMap) {
   return { labels, percents, colors, toplamBasarili, toplamGenel };
 }
 
-// Şerit (bar) grafik: ekip bazında başarı oranı (%) karşılaştırması.
-function _tiCizBarChart(canvasId, chartKey, labels, percents, colors) {
+// Şerit (bar) grafik: ekip/inspector bazında başarı oranı (%) karşılaştırması.
+// Bir çubuğa tıklanınca (kullanıcı talebiyle) pasta grafik o tek ekibe göre
+// güncellenir — bkz. _tiEkipBarTiklandi.
+function _tiCizBarChart(canvasId, chartKey, labels, percents, colors, bolum) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || typeof Chart === 'undefined') return;
   if (_tiEkipChartlar[chartKey]) { _tiEkipChartlar[chartKey].destroy(); _tiEkipChartlar[chartKey] = null; }
@@ -10846,16 +10880,22 @@ function _tiCizBarChart(canvasId, chartKey, labels, percents, colors) {
     type: 'bar',
     data: {
       labels,
-      datasets: [{ label: 'Başarı Oranı (%)', data: percents, backgroundColor: colors, borderRadius: 5, maxBarThickness: 34 }]
+      datasets: [{ label: 'Başarı Oranı (%)', data: percents, backgroundColor: colors, borderRadius: 6, maxBarThickness: 34, hoverBackgroundColor: colors.map(c => c) }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       indexAxis: labels.length > 4 ? 'y' : 'x',
+      onHover: (evt, elements) => { evt.native.target.style.cursor = elements.length ? 'pointer' : 'default'; },
+      onClick: (evt, elements) => {
+        if (!elements.length) return;
+        _tiEkipBarTiklandi(bolum, labels[elements[0].index]);
+      },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: (ctx) => ctx.formattedValue + '%' } }
+        tooltip: { callbacks: { label: (ctx) => ctx.formattedValue + '% (tıklayınca detay)' } }
       },
+      animation: { duration: 500, easing: 'easeOutQuart' },
       scales: {
         x: labels.length > 4 ? { min: 0, max: 100, ticks: { callback: v => v + '%' } } : { ticks: { autoSkip: false, font: { size: 10 } } },
         y: labels.length > 4 ? { ticks: { autoSkip: false, font: { size: 10 } } } : { min: 0, max: 100, ticks: { callback: v => v + '%' } }
@@ -10865,7 +10905,7 @@ function _tiCizBarChart(canvasId, chartKey, labels, percents, colors) {
   canvas.parentElement.style.height = Math.max(160, labels.length * 26) + 'px';
 }
 
-// Pasta (pie) grafik: genel başarılı / başarısız dağılımı (tüm ekipler toplamı).
+// Pasta (pie) grafik: başarılı / başarısız dağılımı.
 function _tiCizPastaChart(canvasId, chartKey, toplamBasarili, toplamGenel, basariEtiket, basarisizEtiket) {
   const canvas = document.getElementById(canvasId);
   if (!canvas || typeof Chart === 'undefined') return;
@@ -10876,16 +10916,66 @@ function _tiCizPastaChart(canvasId, chartKey, toplamBasarili, toplamGenel, basar
     type: 'pie',
     data: {
       labels: [basariEtiket, basarisizEtiket],
-      datasets: [{ data: [toplamBasarili, basarisiz], backgroundColor: ['#00897B', '#E53935'], borderWidth: 0 }]
+      datasets: [{ data: [toplamBasarili, basarisiz], backgroundColor: ['#00897B', '#E53935'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: { duration: 450, easing: 'easeOutQuart' },
       plugins: {
         legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
         tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.raw} (${Math.round(ctx.raw / toplamGenel * 100)}%)` } }
       }
     }
+  });
+}
+
+// KPI rozetini (genel başarı % pili) günceller — renk skora göre değişir.
+function _tiEkipKpiGuncelle(elId, toplamBasarili, toplamGenel) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!toplamGenel) { el.textContent = ''; el.style.background = ''; el.style.color = ''; return; }
+  const percent = Math.round((toplamBasarili / toplamGenel) * 100);
+  const color = typeof getProgressColor === 'function' ? getProgressColor(percent) : '#1565C0';
+  el.textContent = 'Genel: ' + percent + '%';
+  el.style.color = color;
+  el.style.background = color + '1A'; // hafif transparan zemin
+}
+
+// Bar grafikteki bir çubuğa (ekip/inspector) tıklanınca çağrılır — pasta
+// grafiği SADECE o çubuğun verisine göre yeniden çizer (drill-down).
+function _tiEkipBarTiklandi(bolum, etiket) {
+  const veri = _tiEkipSonVeri[bolum];
+  if (!veri || !veri.map || !veri.map.has(etiket)) return;
+  const g = veri.map.get(etiket);
+  const canvasId = bolum === 'skor' ? 'ti-ekip-skor-pie-chart' : 'ti-ekip-ii-pie-chart';
+  const chartKey = bolum === 'skor' ? 'skorPasta' : 'iiPasta';
+  _tiCizPastaChart(canvasId, chartKey, g.basarili, g.toplam, veri.basariEtiket, veri.basarisizEtiket);
+  _tiEkipDrillAktif[bolum] = true;
+  const sifirlaBtn = document.getElementById(bolum === 'skor' ? 'ti-ekip-skor-sifirla' : 'ti-ekip-ii-sifirla');
+  if (sifirlaBtn) sifirlaBtn.style.display = '';
+}
+
+// "🔄 Tümünü Göster" butonuna basılınca pasta grafiği genel (tüm filtrelenmiş
+// veri) toplamına döndürür.
+function _tiEkipPastaSifirla(bolum) {
+  const veri = _tiEkipSonVeri[bolum];
+  if (!veri) return;
+  const canvasId = bolum === 'skor' ? 'ti-ekip-skor-pie-chart' : 'ti-ekip-ii-pie-chart';
+  const chartKey = bolum === 'skor' ? 'skorPasta' : 'iiPasta';
+  _tiCizPastaChart(canvasId, chartKey, veri.basarili, veri.toplam, veri.basariEtiket, veri.basarisizEtiket);
+  _tiEkipDrillAktif[bolum] = false;
+  const sifirlaBtn = document.getElementById(bolum === 'skor' ? 'ti-ekip-skor-sifirla' : 'ti-ekip-ii-sifirla');
+  if (sifirlaBtn) sifirlaBtn.style.display = 'none';
+}
+
+// Tarih/inspector filtresi değiştiğinde drill-down durumunu sıfırlar (eski
+// seçim yeni filtreyle anlamsız kalabileceği için).
+function _tiEkipDrillReset() {
+  _tiEkipDrillAktif = { skor: false, ii: false };
+  ['ti-ekip-skor-sifirla', 'ti-ekip-ii-sifirla'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (btn) btn.style.display = 'none';
   });
 }
 
@@ -10896,57 +10986,131 @@ function renderTiEkipDashboard() {
 
   const fBaslangic = document.getElementById('ti-ekip-baslangic')?.value || '';
   const fBitis = document.getElementById('ti-ekip-bitis')?.value || '';
-  const fInspector = (document.getElementById('ti-ekip-filtre-inspector')?.value || '').trim().toLocaleLowerCase('tr-TR');
+  // Artık serbest metin değil, dropdown'dan seçilen TAM inspector kimliği
+  // (kullanıcı talebiyle: "Inspectör isimleri otomatik gelsin").
+  const fInspector = document.getElementById('ti-ekip-filtre-inspector')?.value || '';
+  const inspectorSeciliMi = !!fInspector;
 
-  // ── 📊 Teknik İnceleme Skorları — ekip bazında: (85+ skor alan değerlendirme
-  // sayısı) / (toplam değerlendirme sayısı) ──
+  let haricSayisi = 0; // Ekip ataması bulunamadığı için özet dışı bırakılan kayıt sayısı
+
+  // ── 📊 Teknik İnceleme Skorları ──
+  // Belirli bir inspector seçiliyse: tek satır (o inspector'ın kendi adıyla),
+  // ekip yöneticisi ise altta not olarak gösterilir. Seçili değilse: ekip
+  // bazında kırılım (ekip ataması olmayan kayıtlar özet dışında bırakılır —
+  // "Atanmamış Ekip" artık gösterilmiyor).
   if (wrapSkor) {
     const filtreliSatirlar = teknikSkorlar.filter(r => {
       if (fBaslangic && (!r.tarih || r.tarih < fBaslangic)) return false;
       if (fBitis && (!r.tarih || r.tarih > fBitis)) return false;
-      if (fInspector && !String(r.inspector || '').toLocaleLowerCase('tr-TR').includes(fInspector)) return false;
+      if (inspectorSeciliMi && r.inspector !== fInspector) return false;
       return true;
     });
     const degerlendirmeler = _tiDegerlendirmeBazindaGrupla(filtreliSatirlar);
     const ekipMap = new Map();
-    degerlendirmeler.forEach(d => {
-      const yoneticiKullaniciAdi = _tiEkipYoneticisiBul(d.inspector);
-      const ekipAd = yoneticiKullaniciAdi ? _formatDisplayName(yoneticiKullaniciAdi) : TI_EKIP_ATANMAMIS_ETIKET;
-      if (!ekipMap.has(ekipAd)) ekipMap.set(ekipAd, { basarili: 0, toplam: 0 });
-      const g = ekipMap.get(ekipAd);
-      g.toplam++;
-      if (d.percent >= 85) g.basarili++;
-    });
+    if (inspectorSeciliMi) {
+      const ad = _formatDisplayName(fInspector);
+      degerlendirmeler.forEach(d => {
+        if (!ekipMap.has(ad)) ekipMap.set(ad, { basarili: 0, toplam: 0 });
+        const g = ekipMap.get(ad);
+        g.toplam++;
+        if (d.percent >= 85) g.basarili++;
+      });
+      const yoneticiKullaniciAdi = _tiEkipYoneticisiBul(fInspector);
+      const notEl = document.getElementById('ti-ekip-skor-not');
+      if (notEl) {
+        notEl.style.display = '';
+        notEl.textContent = yoneticiKullaniciAdi ? `👤 Ekip Yöneticisi: ${_formatDisplayName(yoneticiKullaniciAdi)}` : '👤 Ekip yöneticisi atanmamış';
+      }
+    } else {
+      degerlendirmeler.forEach(d => {
+        const yoneticiKullaniciAdi = _tiEkipYoneticisiBul(d.inspector);
+        if (!yoneticiKullaniciAdi) { haricSayisi++; return; } // Atanmamış Ekip kaldırıldı — özete dahil edilmez
+        const ekipAd = _formatDisplayName(yoneticiKullaniciAdi);
+        if (!ekipMap.has(ekipAd)) ekipMap.set(ekipAd, { basarili: 0, toplam: 0 });
+        const g = ekipMap.get(ekipAd);
+        g.toplam++;
+        if (d.percent >= 85) g.basarili++;
+      });
+      const notEl = document.getElementById('ti-ekip-skor-not');
+      if (notEl) notEl.style.display = 'none';
+    }
     const { labels, percents, colors, toplamBasarili, toplamGenel } = _tiEkipMapToLabelsData(ekipMap);
-    _tiCizBarChart('ti-ekip-skor-bar-chart', 'skorBar', labels, percents, colors);
+    _tiEkipSonVeri.skor = { map: ekipMap, basarili: toplamBasarili, toplam: toplamGenel, basariEtiket: '85+ Başarılı', basarisizEtiket: 'Başarısız' };
+    _tiCizBarChart('ti-ekip-skor-bar-chart', 'skorBar', labels, percents, colors, 'skor');
     _tiCizPastaChart('ti-ekip-skor-pie-chart', 'skorPasta', toplamBasarili, toplamGenel, '85+ Başarılı', 'Başarısız');
+    _tiEkipKpiGuncelle('ti-ekip-skor-kpi', toplamBasarili, toplamGenel);
     wrapSkor.innerHTML = _tiEkipTabloHtml(ekipMap, 'değerlendirme');
   }
 
-  // ── 🔎 İkinci Inspection Kayıtları — ekip bazında: (başarılı / "Geçti"
-  // sonuçlu kayıt sayısı) / (toplam ikinci inspection kaydı) ──
+  // ── 🔎 İkinci Inspection Kayıtları ──
   if (wrapIi) {
     const filtreliKayitlar = ikinciInspectionData.filter(r => {
       if (fBaslangic && (!r.tarih || r.tarih < fBaslangic)) return false;
       if (fBitis && (!r.tarih || r.tarih > fBitis)) return false;
-      if (fInspector && !String(r.inspector || '').toLocaleLowerCase('tr-TR').includes(fInspector)) return false;
+      if (inspectorSeciliMi && r.inspector !== fInspector) return false;
       return true;
     });
     const ekipMap = new Map();
-    filtreliKayitlar.forEach(r => {
-      // Kayıtta doğrudan seçilmiş bir ekip yöneticisi varsa onu kullan,
-      // yoksa inspector'ın bağlı olduğu ekibi bul.
-      const yoneticiKullaniciAdi = r.ekipYoneticisi || _tiEkipYoneticisiBul(r.inspector);
-      const ekipAd = yoneticiKullaniciAdi ? _formatDisplayName(yoneticiKullaniciAdi) : TI_EKIP_ATANMAMIS_ETIKET;
-      if (!ekipMap.has(ekipAd)) ekipMap.set(ekipAd, { basarili: 0, toplam: 0 });
-      const g = ekipMap.get(ekipAd);
-      g.toplam++;
-      if (r.sonuc === 'Geçti') g.basarili++;
-    });
+    if (inspectorSeciliMi) {
+      const ad = _formatDisplayName(fInspector);
+      filtreliKayitlar.forEach(r => {
+        if (!ekipMap.has(ad)) ekipMap.set(ad, { basarili: 0, toplam: 0 });
+        const g = ekipMap.get(ad);
+        g.toplam++;
+        if (r.sonuc === 'Geçti') g.basarili++;
+      });
+      // Kayıtta seçilmiş bir ekip yöneticisi varsa VE bu kişi gerçekten bir
+      // ekip yöneticisiyse onu kullan; değilse inspector'ın gerçek ekibini bul.
+      const ilkKayit = filtreliKayitlar[0];
+      let yoneticiKullaniciAdi = null;
+      if (ilkKayit && ilkKayit.ekipYoneticisi && _tiGercekYoneticiMi(ilkKayit.ekipYoneticisi)) {
+        yoneticiKullaniciAdi = ilkKayit.ekipYoneticisi;
+      } else {
+        yoneticiKullaniciAdi = _tiEkipYoneticisiBul(fInspector);
+      }
+      const notEl = document.getElementById('ti-ekip-ii-not');
+      if (notEl) {
+        notEl.style.display = '';
+        notEl.textContent = yoneticiKullaniciAdi ? `👤 Ekip Yöneticisi: ${_formatDisplayName(yoneticiKullaniciAdi)}` : '👤 Ekip yöneticisi atanmamış';
+      }
+    } else {
+      filtreliKayitlar.forEach(r => {
+        // Kayıtta doğrudan seçilmiş bir ekip yöneticisi varsa VE bu kişi
+        // gerçekten bir ekip yöneticisiyse onu kullan (kullanıcı talebiyle:
+        // "Semiha ve Ömer ekip yöneticisi değil" — artık sahte/yanlış
+        // atamalar süzülüyor), değilse inspector'ın gerçek ekibini bul.
+        let yoneticiKullaniciAdi = null;
+        if (r.ekipYoneticisi && _tiGercekYoneticiMi(r.ekipYoneticisi)) {
+          yoneticiKullaniciAdi = r.ekipYoneticisi;
+        } else {
+          yoneticiKullaniciAdi = _tiEkipYoneticisiBul(r.inspector);
+        }
+        if (!yoneticiKullaniciAdi) { haricSayisi++; return; } // Atanmamış Ekip kaldırıldı — özete dahil edilmez
+        const ekipAd = _formatDisplayName(yoneticiKullaniciAdi);
+        if (!ekipMap.has(ekipAd)) ekipMap.set(ekipAd, { basarili: 0, toplam: 0 });
+        const g = ekipMap.get(ekipAd);
+        g.toplam++;
+        if (r.sonuc === 'Geçti') g.basarili++;
+      });
+      const notEl = document.getElementById('ti-ekip-ii-not');
+      if (notEl) notEl.style.display = 'none';
+    }
     const { labels, percents, colors, toplamBasarili, toplamGenel } = _tiEkipMapToLabelsData(ekipMap);
-    _tiCizBarChart('ti-ekip-ii-bar-chart', 'iiBar', labels, percents, colors);
+    _tiEkipSonVeri.ii = { map: ekipMap, basarili: toplamBasarili, toplam: toplamGenel, basariEtiket: 'Geçti', basarisizEtiket: 'Kaldı' };
+    _tiCizBarChart('ti-ekip-ii-bar-chart', 'iiBar', labels, percents, colors, 'ii');
     _tiCizPastaChart('ti-ekip-ii-pie-chart', 'iiPasta', toplamBasarili, toplamGenel, 'Geçti', 'Kaldı');
+    _tiEkipKpiGuncelle('ti-ekip-ii-kpi', toplamBasarili, toplamGenel);
     wrapIi.innerHTML = _tiEkipTabloHtml(ekipMap, 'kayıt');
+  }
+
+  const haricNotEl = document.getElementById('ti-ekip-haric-not');
+  if (haricNotEl) {
+    if (haricSayisi > 0) {
+      haricNotEl.style.display = '';
+      haricNotEl.textContent = `ℹ️ ${haricSayisi} kayıt, bir ekip yöneticisine atanmadığı için bu özete dahil edilmedi.`;
+    } else {
+      haricNotEl.style.display = 'none';
+    }
   }
 }
 
