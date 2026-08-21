@@ -971,6 +971,38 @@
         </div>
       </div>
 
+      <!-- Ekip Bazlı Performans Özeti (kullanıcı talebiyle eklendi) — sayfanın en üstünde,
+           iki tarih aralığı seçimiyle Teknik İnceleme Skorları ve İkinci Inspection
+           Kayıtlarını ekip (ekip yöneticisi) bazında ayrı ayrı özetler. -->
+      <div class="card" style="margin-bottom:16px;overflow:hidden">
+        <div class="card-header" style="background:linear-gradient(135deg,#0B1F3A 0%,#1565C0 100%);border-bottom:none;padding:14px 16px">
+          <h2 style="color:#fff;gap:8px">
+            <span style="background:rgba(255,255,255,.15);border-radius:7px;padding:4px 7px;font-size:13px">📈</span>
+            Ekip Bazlı Performans Özeti
+          </h2>
+        </div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border2)">
+            <label style="font-size:11px;color:var(--muted);margin:0;display:inline-block;width:auto;white-space:nowrap">Başlangıç</label>
+            <input type="date" id="ti-ekip-baslangic" onchange="renderTiEkipDashboard()" style="width:150px;flex:0 0 auto;padding:6px 8px;font-size:12px">
+            <label style="font-size:11px;color:var(--muted);margin:0;display:inline-block;width:auto;white-space:nowrap">Bitiş</label>
+            <input type="date" id="ti-ekip-bitis" onchange="renderTiEkipDashboard()" style="width:150px;flex:0 0 auto;padding:6px 8px;font-size:12px">
+            <input type="text" id="ti-ekip-filtre-inspector" placeholder="🔎 Inspector ara..." oninput="renderTiEkipDashboard()" style="flex:1 1 180px;min-width:140px;padding:6px 10px;font-size:12px">
+            <button onclick="document.getElementById('ti-ekip-baslangic').value='';document.getElementById('ti-ekip-bitis').value='';document.getElementById('ti-ekip-filtre-inspector').value='';renderTiEkipDashboard()" style="font-size:11px;border:1px solid var(--border2);background:#fff;border-radius:6px;padding:6px 10px;cursor:pointer;color:var(--muted)">✕ Filtreyi Temizle</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">📊 Teknik İnceleme Skorları <span style="font-weight:400;text-transform:none;letter-spacing:0">(85 ve üzeri = başarılı)</span></div>
+              <div id="ti-ekip-skor-wrap" style="overflow-x:auto;border:1px solid var(--border2);border-radius:8px"></div>
+            </div>
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">🔎 İkinci Inspection Kayıtları <span style="font-weight:400;text-transform:none;letter-spacing:0">(Geçti oranı)</span></div>
+              <div id="ti-ekip-ii-wrap" style="overflow-x:auto;border:1px solid var(--border2);border-radius:8px"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Teknik İnceleme Dashboard (kullanıcı talebiyle eklendi) -->
       <div class="card" style="margin-bottom:16px;overflow:hidden">
         <div class="card-header" style="padding:14px 16px;border-bottom:1px solid var(--border2)">
@@ -988,8 +1020,9 @@
             <span style="background:rgba(255,255,255,.15);border-radius:7px;padding:4px 7px;font-size:13px">📝</span>
             Değerlendirme Yap
           </h2>
+          <button type="button" id="ti-degerlendirme-toggle-btn" onclick="toggleTiFormBody('ti-degerlendirme-body','ti-degerlendirme-toggle-btn')" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">🙈 Gizle</button>
         </div>
-        <div class="card-body">
+        <div class="card-body" id="ti-degerlendirme-body">
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px">
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px">Tarih</label>
@@ -1012,7 +1045,7 @@
             <button class="btn" onclick="yazdirTeknikIncelemeSonucu()" id="ti-print-btn" style="background:var(--lblue3);color:var(--blue2);border-color:var(--lblue)">🖨️ Sonucu Yazdır</button>
             <span id="ti-save-msg" style="font-size:12px;color:var(--green);display:none">✅ Kaydedildi!</span>
           </div>
-        </div>
+        </div><!-- /ti-degerlendirme-body -->
       </div>
       <!-- İkinci Inspection (kullanıcı talebiyle eklendi) — Teknik İnceleme
            bölümüne giriş yapanların ikinci günlük hedefi. -->
@@ -1022,8 +1055,9 @@
             <span style="background:rgba(255,255,255,.15);border-radius:7px;padding:4px 7px;font-size:13px">🔎</span>
             İkinci Inspection Kaydı Gir
           </h2>
+          <button type="button" id="ii-form-toggle-btn" onclick="toggleTiFormBody('ii-form-body','ii-form-toggle-btn')" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:7px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap">🙈 Gizle</button>
         </div>
-        <div class="card-body">
+        <div class="card-body" id="ii-form-body">
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px">
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px">Sipariş Kodu</label>
