@@ -1029,6 +1029,7 @@ async function autoFetchOnStartup() {
         renderListe();
         renderEditor();
         updateKlasmanFilter();
+        refreshAnaTanimDatalist();
         console.log('✅ Klasmanlar yüklendi:', klasmanlar.length);
       }
     } catch(e) {
@@ -1476,6 +1477,7 @@ async function _firstRunSync() {
       updateSidebar();
       updateKlasmanFilter();
       renderDashboard();
+      refreshAnaTanimDatalist();
       showStartupBanner(`✅ ${klasmanlar.length} klasman senkronize edildi!`, 'success');
     } else {
       showStartupBanner('ℹ️ Sheets\'te henüz klasman verisi yok', 'info');
@@ -1631,6 +1633,7 @@ async function pullFromSheets() {
       renderEditor();
       updateSidebar();
       updateKlasmanFilter();   // dashboard klasman filtresi dropdown'ı güncelle
+      refreshAnaTanimDatalist();
 
       // Performans verisini de Sheets'ten çek (sayfalandırmalı)
       try {
@@ -5704,6 +5707,7 @@ function addKlasman(){
   sayfa=Math.ceil(filtered().length/KL_PER_PAGE);
   autoSaveAndPushKlasmanlar();
   renderListe(); renderEditor();
+  refreshAnaTanimDatalist();
 }
 
 
@@ -10596,14 +10600,23 @@ function renderAzDegerlendirilenlerTablosu() {
 // İkinci Inspection formundaki Inspector ve Ekip Yöneticisi alanlarını
 // sistemdeki mevcut isimlerden doldurur (kullanıcı talebiyle: elle yazmak
 // yerine sistemden seçilsin).
+// Ana Tanım datalist'ini (klasman listesi) günceller — klasmanlar dizisi
+// ne zaman değişirse değişsin (ilk açılış, Sheets'ten senkron, manuel ekleme)
+// bu fonksiyon tekrar çağrılarak datalist güncel tutulur. Gizli sekmede /
+// önbelleksiz oturumlarda klasmanlar sunucudan ASENKRON geldiği için, sadece
+// sayfa açılışında bir kez doldurmak yetmiyordu — varsayılan 3 klasman
+// (Pantolon/Ceket/Mont) görünüp kalıyordu (kullanıcı talebiyle düzeltildi).
+function refreshAnaTanimDatalist() {
+  const anaTanimList = document.getElementById('ii-ana-tanim-list');
+  if (!anaTanimList) return;
+  const adlar = klasmanlar.map(k => k.ad).filter(Boolean).slice().sort((a,b) => a.localeCompare(b, 'tr'));
+  anaTanimList.innerHTML = adlar.map(ad => `<option value="${_escapeHtml(ad)}"></option>`).join('');
+}
+
 async function fillIkinciInspectionDropdowns() {
   // Ana Tanım: sistemde tanımlı klasmanlar öneri olarak sunulur (datalist),
   // ama kullanıcı listede olmayan bir değeri de elle yazabilir.
-  const anaTanimList = document.getElementById('ii-ana-tanim-list');
-  if (anaTanimList) {
-    const adlar = klasmanlar.map(k => k.ad).filter(Boolean).slice().sort((a,b) => a.localeCompare(b, 'tr'));
-    anaTanimList.innerHTML = adlar.map(ad => `<option value="${_escapeHtml(ad)}"></option>`).join('');
-  }
+  refreshAnaTanimDatalist();
 
   const insSel = document.getElementById('ii-inspector');
   if (insSel) {
@@ -10904,7 +10917,7 @@ function yazdirTeknikIncelemeSonucu() {
         <td class="ti-pr-alt">${_escapeHtml(r.alt)}</td>
         <td class="ti-pr-desc">${_escapeHtml(r.desc)}</td>
         <td class="ti-pr-tick">${r.tikli ? '✔' : ''}</td>
-        <td class="ti-pr-puan">${r.tikli ? r.puan : 0}</td>
+        <td class="ti-pr-puan${r.tikli ? '' : ' ti-pr-puan-kayip'}">${r.tikli ? r.puan : ('-' + r.puan)}</td>
         <td class="ti-pr-olay">${_escapeHtml(r.aciklama || '')}</td>
       </tr>`;
     }
@@ -10932,6 +10945,7 @@ function yazdirTeknikIncelemeSonucu() {
   .ti-pr-desc { text-align:left; }
   .ti-pr-tick { text-align:center; width:5%; font-weight:700; }
   .ti-pr-puan { text-align:center; width:6%; font-weight:700; }
+  .ti-pr-puan-kayip { color:#C62828; }
   .ti-pr-olay { width:18%; font-size:10px; }
   .ti-pr-grouprow td { background:#EAEAEA; font-weight:700; }
   .ti-pr-total td { border: 1px solid #000; padding:10px 12px; font-weight:700; font-size:14px; }
