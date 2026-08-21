@@ -4259,6 +4259,41 @@ function exportCeyrekArsiviToExcel() {
       return;
     }
 
+    // ── BAYAT ANLIK GÖRÜNTÜ UYARISI (kullanıcı talebiyle eklendi) ──
+    // Çeyrek Performans Arşivi CANLI hesaplanmıyor — sadece Dashboard'daki
+    // "📤 Çeyrek Verisi Gönder" butonuna en son basıldığı ANDAKİ bir anlık
+    // görüntüdür (bkz. _ceyrekMetrikHucre'deki "📤 Anlık görüntü" notu).
+    // Excel çıktısı ile Dashboard'daki KPI kutuları (Fark Yaratan/İyi/Orta...)
+    // arasında sayı farkı varsa, hesaplama YANLIŞ olduğundan DEĞİL — aradan
+    // yeni Teknik İnceleme/İkinci Inspection kaydı girildiği ya da Excel
+    // verisi yeniden yüklendiği hâlde arşiv güncellenmediği için oluşur.
+    // Şu anki çeyreğin en son alınan anlık görüntüsü belirgin şekilde eskiyse
+    // (>15 dk), kullanıcıyı uyarıp önce yeniden göndermesini öneriyoruz.
+    const suankiCeyrekAd = _ayToQuarter(new Date().getMonth() + 1);
+    const suankiCeyrekTarihleri = kayitlar
+      .map(k => k[suankiCeyrekAd]?.tarih)
+      .filter(Boolean)
+      .map(t => new Date(t).getTime())
+      .filter(t => !isNaN(t));
+    if (suankiCeyrekTarihleri.length) {
+      const enYeniAnlikGoruntu = Math.max(...suankiCeyrekTarihleri);
+      const dakikaFarki = Math.round((Date.now() - enYeniAnlikGoruntu) / 60000);
+      if (dakikaFarki > 15) {
+        const saat = Math.floor(dakikaFarki / 60), dk = dakikaFarki % 60;
+        const gecenSure = saat > 0 ? `${saat} saat ${dk} dakika` : `${dakikaFarki} dakika`;
+        const devamEt = confirm(
+          `⚠️ Bu çeyreğin (${suankiCeyrekAd}) verisi en son ${gecenSure} önce alınmış bir ANLIK GÖRÜNTÜdür.\n\n` +
+          `Aradan yeni Teknik İnceleme / İkinci Inspection kaydı girildiyse veya performans verisi yeniden yüklendiyse, bu Excel çıktısı Dashboard'daki güncel sayılarla (Fark Yaratan/İyi/Orta/...) UYUŞMAYABİLİR.\n\n` +
+          `Güncel sayılarla dışa aktarmak için: önce Dashboard'a gidip "📤 Çeyrek Verisi Gönder" butonuna basın, sonra tekrar buraya dönüp Excel'e Aktar'ı deneyin.\n\n` +
+          `Yine de mevcut (eski) anlık görüntüyle devam etmek istiyor musunuz?`
+        );
+        if (!devamEt) {
+          if (btn) { btn.innerHTML = origHtml; btn.disabled = false; }
+          return;
+        }
+      }
+    }
+
     // Her inspector için referans seviyeyi hesapla
     const zenginlestirilmis = kayitlar.map(k => ({ k, ref: _ceyrekReferansSeviye(k) }));
 
