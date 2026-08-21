@@ -3748,20 +3748,37 @@ function _ceyrekMetrikHucre(veri) {
   const renk = (v, tersMi) => v === null || v === undefined ? 'var(--muted2)'
     : (v >= 85 ? '#00897B' : v >= 70 ? '#F57F17' : v >= 50 ? '#EF5350' : '#B71C1C');
   // Performans (eski adıyla Verimlilik) artık TEK metriğe değil, 3 metriğin
-  // (Günlük Ort./Teknik Skor/İkinci Insp) BİRLİKTE değerlendirilmesine göre
-  // belirleniyor — bkz. _ceyrekGenelSeviye() ve sayfa üstündeki "⚖️ Performans
-  // Kriterleri (Ağırlıklar)" paneli. Fareyle üzerine gelince hangi metriğin
-  // bu sonucu belirlediği tooltip'te görünür.
+  // (Günlük Ort./Teknik Skor/İkinci Insp) puanlarının ARİTMETİK ORTALAMASINA
+  // göre belirleniyor (Fark Yaratan=5, İyi=4, Orta=3, Gelişime Açık=2,
+  // Zayıf=1 puan) — bkz. _ceyrekGenelSeviye() ve sayfa üstündeki "⚖️
+  // Performans Kriterleri (Ağırlıklar)" paneli. Fareyle üzerine gelince
+  // hangi metriğin kaç puan verdiği ve ortalama puan tooltip'te görünür.
   const pSeviye = typeof _ceyrekGenelSeviye === 'function' ? _ceyrekGenelSeviye(veri) : null;
   const pMetin = pSeviye ? pSeviye.label : '—';
   const pRenk  = pSeviye ? '#' + pSeviye.color : 'var(--muted2)';
-  const pTitle = pSeviye ? ` title="Belirleyici metrik: ${pSeviye.belirleyen || '—'}"` : '';
+  const pTitle = pSeviye ? ` title="${pSeviye.detay || ''} · Ortalama: ${pSeviye.ortalamaPuan.toFixed(1)} puan"` : '';
+  // Bu hücre "📤 Çeyrek Verisi Gönder" butonuna en son basıldığı ANDAKİ bir
+  // ANLIK GÖRÜNTÜdür (canlı hesaplanmaz) — kullanıcı talebiyle: yeni
+  // İkinci Inspection/Teknik İnceleme kaydı eklense bile, bu kutu tekrar
+  // "Çeyrek Verisi Gönder" basılana kadar GÜNCELLENMEZ. Karışıklığı önlemek
+  // için son anlık görüntü tarihi küçük bir not olarak gösterilir.
+  let sonGuncellemeNot = '';
+  if (veri.tarih) {
+    const dt = new Date(veri.tarih);
+    if (!isNaN(dt.getTime())) {
+      const str = dt.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' }) +
+        ' ' + dt.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+      sonGuncellemeNot = `<div style="font-size:10px;color:var(--muted2);margin-top:2px">📤 Anlık görüntü: ${str}</div>`;
+    }
+  }
+  const pPuanEtiket = pSeviye ? ` <span style="font-size:11px;color:var(--muted2);font-weight:400">(${pSeviye.ortalamaPuan.toFixed(1)}/5)</span>` : '';
   return `
     <div style="font-size:12px;line-height:2">
-      <div><span style="color:var(--muted)">Performans:</span> <strong style="font-size:14px;color:${pRenk}"${pTitle}>${pMetin}</strong></div>
+      <div><span style="color:var(--muted)">Performans:</span> <strong style="font-size:14px;color:${pRenk}"${pTitle}>${pMetin}</strong>${pPuanEtiket}</div>
       <div><span style="color:var(--muted)">İkinci Insp.:</span> <strong style="font-size:14px;color:${renk(veri.ikinciInsp)}">${veri.ikinciInsp !== null && veri.ikinciInsp !== undefined ? veri.ikinciInsp + '%' : '—'}</strong></div>
       <div><span style="color:var(--muted)">Teknik Skor:</span> <strong style="font-size:14px;color:${renk(veri.teknikSkor)}">${veri.teknikSkor !== null && veri.teknikSkor !== undefined ? veri.teknikSkor + '%' : '—'}</strong></div>
       <div><span style="color:var(--muted)">Günlük Ort. (Normal):</span> <strong style="font-size:14px;color:var(--navy)">${veri.gunlukOrtNormal !== null && veri.gunlukOrtNormal !== undefined ? formatTR(veri.gunlukOrtNormal) + ' adet' : '—'}</strong></div>
+      ${sonGuncellemeNot}
     </div>`;
 }
 
@@ -3987,16 +4004,19 @@ function _ceyrekKpiSayfaZeminiYaz(ws, satirSayisi, kolonSayisi) {
 // Özeti" kart sayfası, bir "Özet" sayfası, tüm çeyreklerin göründüğü bir
 // "Tüm Veriler" sayfası, ve her seviye için AYRI birer sayfa içerir.
 
-// Seviye meta bilgisi — sıralama (sira) en düşüğü bulmak için kullanılır:
-// bir seviyeye ulaşmak için elde VERİSİ OLAN tüm metrikler o seviyeyi
-// karşılamalıdır (yani en zayıf metrik genel sonucu belirler).
+// Seviye meta bilgisi. "sira" = puanlama sistemindeki KARŞILIĞI (1-5) —
+// kullanıcı talebiyle: Fark Yaratan=5, İyi=4, Orta=3, Gelişime Açık=2,
+// Zayıf=1 puan. Genel Performans, veri bulunan metriklerin puanlarının
+// ARİTMETİK ORTALAMASI alınıp en yakın tam sayıya yuvarlanarak belirlenir.
 const CEYREK_SEVIYE_META = {
-  farkyaratan: { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE', sira: 4 },
-  iyi:         { key: 'iyi',         label: 'İyi',           color: '2563EB', bg: 'E3F2FD', sira: 3 },
-  orta:        { key: 'orta',        label: 'Orta',          color: 'F57F17', bg: 'FFF8E1', sira: 2 },
-  acik:        { key: 'acik',        label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE', sira: 1 },
-  zayif:       { key: 'zayif',       label: 'Zayıf',         color: 'B71C1C', bg: 'FFEBEE', sira: 0 }
+  farkyaratan: { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE', sira: 5 },
+  iyi:         { key: 'iyi',         label: 'İyi',           color: '2563EB', bg: 'E3F2FD', sira: 4 },
+  orta:        { key: 'orta',        label: 'Orta',          color: 'F57F17', bg: 'FFF8E1', sira: 3 },
+  acik:        { key: 'acik',        label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE', sira: 2 },
+  zayif:       { key: 'zayif',       label: 'Zayıf',         color: 'B71C1C', bg: 'FFEBEE', sira: 1 }
 };
+// Puan (1-5) → seviye meta'sı ters eşleme (ortalama yuvarlandıktan sonra kullanılır)
+const CEYREK_PUAN_TO_SEVIYE = { 5: CEYREK_SEVIYE_META.farkyaratan, 4: CEYREK_SEVIYE_META.iyi, 3: CEYREK_SEVIYE_META.orta, 2: CEYREK_SEVIYE_META.acik, 1: CEYREK_SEVIYE_META.zayif };
 
 // Tek bir metrik değerini (ör. Teknik Skor: 94), o metriğin kayıtlı
 // eşiklerine (ceyrekEsikleri[metrikKey]) göre bir seviyeye çevirir.
@@ -4014,11 +4034,13 @@ function _ceyrekMetrikSeviye(deger, metrikKey) {
 const CEYREK_METRIK_ADI = { gunlukOrt: 'Günlük Ort.', teknikSkor: 'Teknik Skor', ikinciInsp: 'İkinci Insp' };
 
 // Bir çeyrek kaydının (gunlukOrtNormal/teknikSkor/ikinciInsp) GENEL
-// "Performans" seviyesini döner — kullanıcı talebiyle: sayfa üstündeki
-// "⚖️ Performans Kriterleri (Ağırlıklar)" panelinde tanımlı eşiklere göre,
-// veri bulunan metriklerin EN DÜŞÜK seviyesi esas alınır (bir seviyeye
-// ulaşmak için mevcut TÜM metrikler o seviyeyi karşılamalı). Veri olmayan
-// ("—") metrikler hesaba katılmaz.
+// "Performans" seviyesini döner — kullanıcı talebiyle YENİ PUANLAMA
+// SİSTEMİ: her metrik önce kendi eşiğine göre bir seviyeye (Fark
+// Yaratan=5 / İyi=4 / Orta=3 / Gelişime Açık=2 / Zayıf=1 puan) çevrilir,
+// sonra veri bulunan metriklerin puanlarının ARİTMETİK ORTALAMASI alınıp
+// en yakın tam sayıya yuvarlanarak genel seviye belirlenir. Örnek: Günlük
+// Ort. Fark Yaratan (5) + İkinci Insp Orta (3) → ortalama 4.0 → İyi.
+// Veri olmayan ("—") metrikler ortalamaya katılmaz.
 function _ceyrekGenelSeviye(veri) {
   if (!veri) return null;
   const adaylar = [
@@ -4027,9 +4049,15 @@ function _ceyrekGenelSeviye(veri) {
     { metrik: 'ikinciInsp', seviye: _ceyrekMetrikSeviye(veri.ikinciInsp, 'ikinciInsp') }
   ].filter(a => a.seviye);
   if (!adaylar.length) return null;
-  const enDusuk = adaylar.reduce((en, a) => a.seviye.sira < en.seviye.sira ? a : en, adaylar[0]);
-  // belirleyen: sonucu belirleyen (en zayıf) metriğin adı — tooltip'te gösterilir
-  return { ...enDusuk.seviye, belirleyen: CEYREK_METRIK_ADI[enDusuk.metrik] };
+  const toplamPuan = adaylar.reduce((s, a) => s + a.seviye.sira, 0);
+  const ortalamaPuan = toplamPuan / adaylar.length;
+  // Yuvarlarken 1-5 aralığının dışına taşmayı engelle (teorik olarak taşmaz
+  // ama güvenlik için sınırlanıyor).
+  const yuvarlanmisPuan = Math.min(5, Math.max(1, Math.round(ortalamaPuan)));
+  const sonuc = CEYREK_PUAN_TO_SEVIYE[yuvarlanmisPuan];
+  // detay: hangi metriğin kaç puan verdiği — tooltip'te gösterilir
+  const detay = adaylar.map(a => `${CEYREK_METRIK_ADI[a.metrik]}: ${a.seviye.label} (${a.seviye.sira})`).join(' · ');
+  return { ...sonuc, ortalamaPuan, detay };
 }
 
 function _ceyrekReferansSeviye(kayit) {
