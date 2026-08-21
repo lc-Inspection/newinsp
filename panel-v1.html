@@ -1030,6 +1030,11 @@
               <input type="text" id="ii-siparis-kodu" placeholder="Sipariş kodu" style="width:100%">
             </div>
             <div>
+              <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px">Ana Tanım</label>
+              <input type="text" id="ii-ana-tanim" list="ii-ana-tanim-list" placeholder="Klasman seçin veya elle yazın" style="width:100%" autocomplete="off">
+              <datalist id="ii-ana-tanim-list"></datalist>
+            </div>
+            <div>
               <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px">Inspector İsmi <span style="color:#C62828">*</span></label>
               <select id="ii-inspector" style="width:100%">
                 <option value="">— Inspector seçin —</option>
@@ -1048,6 +1053,10 @@
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px">Talep Miktarı</label>
               <input type="number" id="ii-talep-miktari" placeholder="0" min="0" style="width:100%">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px">AQL Miktarı</label>
+              <input type="number" id="ii-aql-miktari" placeholder="0" min="0" style="width:100%">
             </div>
             <div>
               <label style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:5px">Sonuç <span style="color:#C62828">*</span></label>
