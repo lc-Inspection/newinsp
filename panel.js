@@ -4395,6 +4395,7 @@ function renderDashboard() {
 
   filteredInspectors = inspectors;
   updateKlasmanFilter();
+  refreshAnaTanimDatalist();
   filterInspectors();
   updateSummaryStats(inspectors);
   renderTeamSection();
@@ -10606,10 +10607,21 @@ function renderAzDegerlendirilenlerTablosu() {
 // önbelleksiz oturumlarda klasmanlar sunucudan ASENKRON geldiği için, sadece
 // sayfa açılışında bir kez doldurmak yetmiyordu — varsayılan 3 klasman
 // (Pantolon/Ceket/Mont) görünüp kalıyordu (kullanıcı talebiyle düzeltildi).
+// KAYNAK: Gerçek/aktif klasman isimleri çoğunlukla "Klasman Yönetimi"
+// sayfasındaki `klasmanlar` dizisinde DEĞİL, performans_raw tablosundan
+// (data_json) yüklenen performansData'daki her inspector'ın kendi
+// klasmanlar objesinin anahtarlarında bulunuyor — updateKlasmanFilter()
+// fonksiyonuyla AYNI iki kaynağı birleştiriyoruz ki dashboard'daki Klasman
+// Filtresi'nde görünen isimlerin AYNISI burada da önerilsin.
 function refreshAnaTanimDatalist() {
   const anaTanimList = document.getElementById('ii-ana-tanim-list');
   if (!anaTanimList) return;
-  const adlar = klasmanlar.map(k => k.ad).filter(Boolean).slice().sort((a,b) => a.localeCompare(b, 'tr'));
+  const klasmanSet = new Set();
+  (performansData || []).forEach(inspector => {
+    Object.keys(inspector.klasmanlar || {}).forEach(k => { if (k) klasmanSet.add(k); });
+  });
+  (klasmanlar || []).forEach(k => { if (k && k.ad) klasmanSet.add(k.ad); });
+  const adlar = Array.from(klasmanSet).sort((a,b) => a.localeCompare(b, 'tr'));
   anaTanimList.innerHTML = adlar.map(ad => `<option value="${_escapeHtml(ad)}"></option>`).join('');
 }
 
@@ -10864,45 +10876,14 @@ function _tiBuildYazdirRows(kList) {
   return rows;
 }
 
-// ─── Değerlendirme Sonucunu Yazdır (LC Waikiki resmi form ile birebir) ───
-// Ekrandaki formda o an işaretli olan tik/açıklama durumunu (kaydedilmiş
-// olsun olmasın) alıp, ekteki "Kamera Formu" Excel şablonuyla aynı düzende
-// (başlık bilgileri + 21 maddelik tik/puan tablosu + toplam puan +
-// iki imza kutusu) yeni bir sekmede açar ve otomatik yazdırma diyaloğunu
-// tetikler.
-function yazdirTeknikIncelemeSonucu() {
-  const inspector = document.getElementById('ti-inspector')?.value?.trim();
-  const tarih = document.getElementById('ti-tarih')?.value || '';
-  const talepNo = document.getElementById('ti-talep-secili')?.value?.trim();
-
-  if (!inspector) { alert('Lütfen bir inspector seçin.'); return; }
-  if (!talepNo) { alert('Lütfen değerlendirmeyi yaptığınız Talep No\'yu seçin veya girin.'); return; }
-
-  const aktifler = teknikKriterler.filter(k => k.aktif);
-  if (!aktifler.length) { alert('Yazdırılacak kriter yok.'); return; }
-
-  const kList = aktifler.map(k => {
-    const esc = (window.CSS && CSS.escape) ? CSS.escape(k.id) : k.id;
-    const cb = document.querySelector(`.ti-tik-cb[data-kriter="${esc}"]`);
-    const aciklamaInp = document.querySelector(`.ti-aciklama-input[data-kriter="${esc}"]`);
-    return {
-      metin: k.metin,
-      puan: Number(k.puan) || 0,
-      tikli: !!(cb && cb.checked),
-      aciklama: aciklamaInp ? aciklamaInp.value.trim() : ''
-    };
-  });
-
+// ─── Rapor HTML'ini Oluştur (paylaşılan yapı) ───
+// Hem canlı formdan yazdırma (yazdirTeknikIncelemeSonucu) hem de kayıtlar
+// listesinden doğrudan önizleme (onizleTeknikIncelemeRaporu) AYNI şablonu
+// kullanır — kullanıcı talebiyle: "👁️ ikonuna tıklayınca rapor gözüksün".
+function _tiOlusturRaporHtml(inspectorAd, tarihStr, talepNo, degerlendirenAd, kList) {
   const rows = _tiBuildYazdirRows(kList);
   const maxToplam = kList.reduce((s, k) => s + k.puan, 0);
   const kazanilanToplam = kList.reduce((s, k) => s + (k.tikli ? k.puan : 0), 0);
-
-  const inspectorAd = _formatDisplayName(inspector);
-  const tarihStr = tarih ? new Date(tarih + 'T00:00:00').toLocaleDateString('tr-TR') : '';
-  // Formu dolduran kullanıcının adı — admin dahil HER ZAMAN gösterilir
-  // (eskiden admin ise boş bırakılıyordu, kullanıcı talebiyle kaldırıldı).
-  const degerlendirenAd = (currentUser && currentUser.username)
-    ? _formatDisplayName(currentUser.username) : '';
 
   let bodyRows = '';
   rows.forEach(r => {
@@ -10923,7 +10904,7 @@ function yazdirTeknikIncelemeSonucu() {
     }
   });
 
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="tr">
 <head>
 <meta charset="UTF-8">
@@ -11032,12 +11013,95 @@ function yazdirTeknikIncelemeSonucu() {
   </script>
 </body>
 </html>`;
+}
 
+// ─── Rapor penceresini aç (paylaşılan) ───
+function _tiAcRaporPenceresi(html) {
   const win = window.open('', '_blank');
   if (!win) { alert('Yazdırma penceresi açılamadı. Lütfen tarayıcınızın açılır pencere engelleyicisini kontrol edin.'); return; }
   win.document.open();
   win.document.write(html);
   win.document.close();
+}
+
+// ─── Değerlendirme Sonucunu Yazdır (LC Waikiki resmi form ile birebir) ───
+// Ekrandaki formda o an işaretli olan tik/açıklama durumunu (kaydedilmiş
+// olsun olmasın) alıp, ekteki "Kamera Formu" Excel şablonuyla aynı düzende
+// (başlık bilgileri + 21 maddelik tik/puan tablosu + toplam puan +
+// iki imza kutusu) yeni bir sekmede açar ve otomatik yazdırma diyaloğunu
+// tetikler.
+function yazdirTeknikIncelemeSonucu() {
+  const inspector = document.getElementById('ti-inspector')?.value?.trim();
+  const tarih = document.getElementById('ti-tarih')?.value || '';
+  const talepNo = document.getElementById('ti-talep-secili')?.value?.trim();
+
+  if (!inspector) { alert('Lütfen bir inspector seçin.'); return; }
+  if (!talepNo) { alert('Lütfen değerlendirmeyi yaptığınız Talep No\'yu seçin veya girin.'); return; }
+
+  const aktifler = teknikKriterler.filter(k => k.aktif);
+  if (!aktifler.length) { alert('Yazdırılacak kriter yok.'); return; }
+
+  const kList = aktifler.map(k => {
+    const esc = (window.CSS && CSS.escape) ? CSS.escape(k.id) : k.id;
+    const cb = document.querySelector(`.ti-tik-cb[data-kriter="${esc}"]`);
+    const aciklamaInp = document.querySelector(`.ti-aciklama-input[data-kriter="${esc}"]`);
+    return {
+      metin: k.metin,
+      puan: Number(k.puan) || 0,
+      tikli: !!(cb && cb.checked),
+      aciklama: aciklamaInp ? aciklamaInp.value.trim() : ''
+    };
+  });
+
+  const inspectorAd = _formatDisplayName(inspector);
+  const tarihStr = tarih ? new Date(tarih + 'T00:00:00').toLocaleDateString('tr-TR') : '';
+  // Formu dolduran kullanıcının adı — admin dahil HER ZAMAN gösterilir
+  // (eskiden admin ise boş bırakılıyordu, kullanıcı talebiyle kaldırıldı).
+  const degerlendirenAd = (currentUser && currentUser.username)
+    ? _formatDisplayName(currentUser.username) : '';
+
+  const html = _tiOlusturRaporHtml(inspectorAd, tarihStr, talepNo, degerlendirenAd, kList);
+  _tiAcRaporPenceresi(html);
+}
+
+// ─── Teknik İnceleme Skorları listesinden DOĞRUDAN rapor önizlemesi ───
+// (kullanıcı talebiyle eklendi: "👁️ ikonuna tıklayınca rapor gözüksün")
+// Eskiden raporu görmek için önce "✏️ Düzenle" ile formu doldurup sonra
+// "🖨️ Sonucu Yazdır"a basmak gerekiyordu. Bu fonksiyon o iki adımı tek
+// tıka indiriyor: kaydın TAM (madde madde) detayını sunucudan çekip
+// doğrudan rapor penceresini açıyor. Kaydedilen madde metni/puanı, o an
+// güncel kriter listesinden DEĞİL, kayıt anında sunucuya yazılmış olan
+// (m/p alanları) değerlerden okunuyor — böylece kriterler daha sonra
+// değişse/silinse bile geçmiş rapor kaydedildiği haliyle doğru gösterilir.
+async function onizleTeknikIncelemeRaporu(id) {
+  const url = appConfig.sheetsWebAppUrl;
+  const token = appConfig.sheetsApiToken;
+  if (!url) { alert('⚠️ Sunucu bağlantısı yapılandırılmamış.'); return; }
+
+  try {
+    const resp = await jsonpFetch(url, { action: 'getTeknikIncelemeDetay', token, id });
+    if (!resp || resp.status !== 'ok' || !resp.kayit) {
+      alert('❌ Kayıt detayı alınamadı: ' + (resp?.message || 'bilinmeyen hata'));
+      return;
+    }
+    const kayit = resp.kayit;
+    const kList = (kayit.cevaplar || []).map(c => ({
+      metin: c.m || c.kriterMetin || '',
+      puan: Number(c.p !== undefined ? c.p : c.maxPuan) || 0,
+      tikli: !!c.t,
+      aciklama: c.a || ''
+    }));
+    if (!kList.length) { alert('⚠️ Bu kayıtta madde detayı bulunamadı.'); return; }
+
+    const inspectorAd = _formatDisplayName(kayit.inspector || '');
+    const tarihStr = kayit.tarih ? new Date(kayit.tarih + 'T00:00:00').toLocaleDateString('tr-TR') : '';
+    const degerlendirenAd = kayit.degerlendiren ? _formatDisplayName(kayit.degerlendiren) : '';
+
+    const html = _tiOlusturRaporHtml(inspectorAd, tarihStr, kayit.talepNo || '', degerlendirenAd, kList);
+    _tiAcRaporPenceresi(html);
+  } catch(e) {
+    alert('Hata: ' + e.message);
+  }
 }
 
 // ─── Değerlendirmeyi Kaydet ───
@@ -11308,8 +11372,10 @@ function renderTiSkorOzet() {
     let duzenleBtn = '';
     if (s.count >= 1) {
       const enSonKayit = s.kayitlar.slice().sort((a,b) => (b.savedAt||'').localeCompare(a.savedAt||''))[0];
+      const enSonIdAttr = String(enSonKayit.id).replace(/'/g,"\\'");
       const cokSayidaNotu = s.count > 1 ? ` title="${s.count} kayıttan en son girilen (${_escapeHtml(enSonKayit.tarih||'')}) düzenlenecek"` : '';
-      duzenleBtn = `<button type="button"${cokSayidaNotu} onclick="duzenleTeknikInceleme('${String(enSonKayit.id).replace(/'/g,"\\'")}')" style="border:1px solid var(--lblue);background:var(--lblue3);color:var(--blue2);border-radius:6px;padding:3px 9px;cursor:pointer;font-size:11px;font-weight:600;margin-left:8px">✏️ Düzenle${s.count > 1 ? ' (en son)' : ''}</button>`;
+      duzenleBtn = `<button type="button" title="Raporu önizle" onclick="onizleTeknikIncelemeRaporu('${enSonIdAttr}')" style="border:1px solid var(--border2);background:#fff;color:var(--muted);border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;font-weight:600;margin-left:8px">👁️</button>` +
+        `<button type="button"${cokSayidaNotu} onclick="duzenleTeknikInceleme('${enSonIdAttr}')" style="border:1px solid var(--lblue);background:var(--lblue3);color:var(--blue2);border-radius:6px;padding:3px 9px;cursor:pointer;font-size:11px;font-weight:600;margin-left:6px">✏️ Düzenle${s.count > 1 ? ' (en son)' : ''}</button>`;
     }
     return `<tr>
       <td style="padding:8px 10px;font-size:13px;color:var(--navy);font-weight:500">${_escapeHtml(_formatDisplayName(ins))}</td>
@@ -11497,6 +11563,7 @@ function renderTiKayitlarTablo() {
       <td style="padding:7px 10px;font-size:12px;font-weight:700;color:${getProgressColor(percent)}">${percent}%</td>
       <td style="padding:7px 10px">${durumHtml}</td>
       <td style="padding:7px 10px">
+        <button type="button" title="Raporu önizle" onclick="onizleTeknikIncelemeRaporu('${String(g.id).replace(/'/g,"\\'")}')" style="border:1px solid var(--border2);background:#fff;color:var(--muted);border-radius:6px;padding:4px 9px;cursor:pointer;font-size:11.5px;font-weight:600;margin-right:6px">👁️</button>
         <button type="button" onclick="duzenleTeknikInceleme('${String(g.id).replace(/'/g,"\\'")}')" style="border:1px solid var(--lblue);background:var(--lblue3);color:var(--blue2);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11.5px;font-weight:600">✏️ Düzenle</button>
       </td>
     </tr>`;
