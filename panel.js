@@ -4031,7 +4031,8 @@ function _ceyrekKpiSayfaZeminiYaz(ws, satirSayisi, kolonSayisi) {
 // Seviye meta bilgisi. "sira" = puanlama sistemindeki KARŞILIĞI (1-5) —
 // kullanıcı talebiyle: Fark Yaratan=5, İyi=4, Orta=3, Gelişime Açık=2,
 // Zayıf=1 puan. Genel Performans, veri bulunan metriklerin puanlarının
-// ARİTMETİK ORTALAMASI alınıp en yakın tam sayıya yuvarlanarak belirlenir.
+// ARİTMETİK ORTALAMASI alınıp aşağıdaki (kullanıcının verdiği) skalaya göre
+// bir seviyeye eşlenerek belirlenir.
 const CEYREK_SEVIYE_META = {
   farkyaratan: { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE', sira: 5 },
   iyi:         { key: 'iyi',         label: 'İyi',           color: '2563EB', bg: 'E3F2FD', sira: 4 },
@@ -4039,8 +4040,22 @@ const CEYREK_SEVIYE_META = {
   acik:        { key: 'acik',        label: 'Gelişime Açık', color: 'EF5350', bg: 'FFEBEE', sira: 2 },
   zayif:       { key: 'zayif',       label: 'Zayıf',         color: 'B71C1C', bg: 'FFEBEE', sira: 1 }
 };
-// Puan (1-5) → seviye meta'sı ters eşleme (ortalama yuvarlandıktan sonra kullanılır)
-const CEYREK_PUAN_TO_SEVIYE = { 5: CEYREK_SEVIYE_META.farkyaratan, 4: CEYREK_SEVIYE_META.iyi, 3: CEYREK_SEVIYE_META.orta, 2: CEYREK_SEVIYE_META.acik, 1: CEYREK_SEVIYE_META.zayif };
+
+// Ortalama puan → genel seviye skalası (kullanıcı talebiyle güncellendi —
+// artık en yakın tam sayıya yuvarlama YOK, doğrudan aralık eşiklerine göre
+// belirleniyor):
+//   Fark Yaratan : ortalama ≥ 4.50
+//   İyi          : ortalama ≥ 3.75  (< 4.50)
+//   Orta         : ortalama ≥ 2.75  (< 3.75)
+//   Gelişime Açık: ortalama ≥ 1.75  (< 2.75)
+//   Zayıf        : ortalama <  1.75
+function _ceyrekPuanToSeviye(puan) {
+  if (puan >= 4.5)  return CEYREK_SEVIYE_META.farkyaratan;
+  if (puan >= 3.75) return CEYREK_SEVIYE_META.iyi;
+  if (puan >= 2.75) return CEYREK_SEVIYE_META.orta;
+  if (puan >= 1.75) return CEYREK_SEVIYE_META.acik;
+  return CEYREK_SEVIYE_META.zayif;
+}
 
 // Tek bir metrik değerini (ör. Teknik Skor: 94), o metriğin kayıtlı
 // eşiklerine (ceyrekEsikleri[metrikKey]) göre bir seviyeye çevirir.
@@ -4058,13 +4073,13 @@ function _ceyrekMetrikSeviye(deger, metrikKey) {
 const CEYREK_METRIK_ADI = { gunlukOrt: 'Günlük Ort.', teknikSkor: 'Teknik Skor', ikinciInsp: 'İkinci Insp' };
 
 // Bir çeyrek kaydının (gunlukOrtNormal/teknikSkor/ikinciInsp) GENEL
-// "Performans" seviyesini döner — kullanıcı talebiyle YENİ PUANLAMA
-// SİSTEMİ: her metrik önce kendi eşiğine göre bir seviyeye (Fark
-// Yaratan=5 / İyi=4 / Orta=3 / Gelişime Açık=2 / Zayıf=1 puan) çevrilir,
-// sonra veri bulunan metriklerin puanlarının ARİTMETİK ORTALAMASI alınıp
-// en yakın tam sayıya yuvarlanarak genel seviye belirlenir. Örnek: Günlük
-// Ort. Fark Yaratan (5) + İkinci Insp Orta (3) → ortalama 4.0 → İyi.
-// Veri olmayan ("—") metrikler ortalamaya katılmaz.
+// "Performans" seviyesini döner — her metrik önce kendi eşiğine göre bir
+// seviyeye (Fark Yaratan=5 / İyi=4 / Orta=3 / Gelişime Açık=2 / Zayıf=1
+// puan) çevrilir, sonra veri bulunan metriklerin puanlarının ARİTMETİK
+// ORTALAMASI alınıp _ceyrekPuanToSeviye() skalasına göre genel seviye
+// belirlenir. Örnek: Günlük Ort. Fark Yaratan (5) + İkinci Insp Orta (3)
+// → ortalama 4.0 → İyi (3.75 ≤ 4.0 < 4.5). Veri olmayan ("—") metrikler
+// ortalamaya katılmaz.
 function _ceyrekGenelSeviye(veri) {
   if (!veri) return null;
   const adaylar = [
@@ -4075,10 +4090,7 @@ function _ceyrekGenelSeviye(veri) {
   if (!adaylar.length) return null;
   const toplamPuan = adaylar.reduce((s, a) => s + a.seviye.sira, 0);
   const ortalamaPuan = toplamPuan / adaylar.length;
-  // Yuvarlarken 1-5 aralığının dışına taşmayı engelle (teorik olarak taşmaz
-  // ama güvenlik için sınırlanıyor).
-  const yuvarlanmisPuan = Math.min(5, Math.max(1, Math.round(ortalamaPuan)));
-  const sonuc = CEYREK_PUAN_TO_SEVIYE[yuvarlanmisPuan];
+  const sonuc = _ceyrekPuanToSeviye(ortalamaPuan);
   // detay: hangi metriğin kaç puan verdiği — tooltip'te gösterilir
   const detay = adaylar.map(a => `${CEYREK_METRIK_ADI[a.metrik]}: ${a.seviye.label} (${a.seviye.sira})`).join(' · ');
   return { ...sonuc, ortalamaPuan, detay };
