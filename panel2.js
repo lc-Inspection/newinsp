@@ -1198,7 +1198,7 @@ async function aoGeneratePdfAndMail() {
     var klColors=['#1565C0','#00897B','#F57F17','#8E24AA','#D84315','#00838F','#558B2F','#6D4C41','#546E7A'];
     var p1=top8.length   ? await makeDoughnut(top8.map(function(k){return k.ad;}),top8.map(function(k){return k.adet;}),klColors.slice(0,top8.length)) : null;
     var p2=activeBands.length ? await makeDoughnut(activeBands.map(function(b){return b.l;}),activeBands.map(function(b){return b.n;}),activeBands.map(function(b){return b.c;})) : null;
-    var p3=(normalSn+otSn)>0 ? await makeDoughnut(['Normal','Overtime'],[normalSn,otSn],['#1565C0','#E65100']) : null;
+    var p3=(normalSn+otSn)>0 ? await makeDoughnut(['Normal','Mesai Kalinan Sure'],[normalSn,otSn],['#1565C0','#E65100']) : null;
     document.body.removeChild(sandbox);
 
     // ── PDF ───────────────────────────────────────────────────────────────────
@@ -1319,24 +1319,30 @@ async function aoGeneratePdfAndMail() {
     var col2=[
       'Standart Sure: '+(_aoFmtSn(totalStd)||'--'),
       'Gerceklesen  : '+(totalFiil>0?_aoFmtSn(totalFiil):'--'),
-      'Overtime     : '+(otDk>0?otDk+' dk':'--')
+      'Mesai Kalinan Sure : '+(otDk>0?otDk+' dk':'--')
     ];
     col1.forEach(function(t,i){pdf.text(t,M+9,y+18+i*5);});
     col2.forEach(function(t,i){pdf.text(t,M+90,y+18+i*5);});
 
-    // Performans rozeti — büyük % hâlâ adet-bazlı (Günlük Ort. / Hedef),
-    // ama alttaki ETİKET artık panel.js ile BİREBİR aynı KOMPOZİT kategori
-    // (Günlük Ort. + İkinci Inspection + Teknik İnceleme ortalaması).
+    // Performans rozeti — YÜZDE KALDIRILDI (kullanıcı talebiyle); artık
+    // sadece panel.js ile BİREBİR aynı KOMPOZİT kategori etiketi gösteriliyor
+    // (Günlük Ort. + İkinci Inspection + Teknik İnceleme ortalaması). Kutu
+    // dar (22mm) olduğu için font otomatik küçültülerek sığdırılıyor.
     fill(perfC); pdf.roundedRect(W-M-25,y+4,22,24,2,2,'F');
-    txt('#ffffff'); pdf.setFontSize(18); pdf.setFont('helvetica','bold');
-    pdf.text('%'+duzPerf, W-M-14, y+15,{align:'center'});
     var _bl=badgeLines(genelLabel);
-    pdf.setFontSize(_bl.length>1?5:6); pdf.setFont('helvetica','bold');
+    txt('#ffffff'); pdf.setFont('helvetica','bold');
+    var _badgeMaxW=19; // 22mm kutu - iç boşluk
     if(_bl.length>1){
-      pdf.text(_bl[0], W-M-14, y+21,{align:'center'});
-      pdf.text(_bl[1], W-M-14, y+24.5,{align:'center'});
+      var _f1=10;
+      pdf.setFontSize(_f1);
+      while(_f1>5 && (pdf.getTextWidth(_bl[0])>_badgeMaxW || pdf.getTextWidth(_bl[1])>_badgeMaxW)){ _f1-=0.3; pdf.setFontSize(_f1); }
+      pdf.text(_bl[0], W-M-14, y+14.5,{align:'center'});
+      pdf.text(_bl[1], W-M-14, y+14.5+_f1*0.42+3.2,{align:'center'});
     } else {
-      pdf.text(_bl[0], W-M-14, y+23,{align:'center'});
+      var _f0=14;
+      pdf.setFontSize(_f0);
+      while(_f0>6 && pdf.getTextWidth(_bl[0])>_badgeMaxW){ _f0-=0.4; pdf.setFontSize(_f0); }
+      pdf.text(_bl[0], W-M-14, y+17.5,{align:'center'});
     }
 
     // ── Kompozit Performans — 3 Metrik Satırı ────────────────────────────────
@@ -1382,7 +1388,7 @@ async function aoGeneratePdfAndMail() {
       {v:fmtN(totalAdet),      l:'TOPLAM ADET',   c:'#1565C0'},
       {v:_aoFmtSn(totalStd)||'--',l:'STANDART',    c:'#0B1F3A'},
       {v:totalFiil>0?_aoFmtSn(totalFiil):'--',l:'GERCEKLESEN',c:'#00897B'},
-      {v:otDk>0?otDk+'dk':'--', l:'OVERTIME',      c:otDk>0?'#E65100':'#9E9E9E'},
+      {v:otDk>0?otDk+'dk':'--', l:'MESAI KALINAN SURE', c:otDk>0?'#E65100':'#9E9E9E'},
       {v:String(data.length),  l:'KAYIT SAYISI',  c:'#1565C0'}
     ];
     var sW=Math.max(1,_n((CW-(stats.length-1)*1.5)/stats.length));
@@ -1393,7 +1399,12 @@ async function aoGeneratePdfAndMail() {
 
       txt(s.c); pdf.setFontSize(11); pdf.setFont('helvetica','bold');
       pdf.text(s.v, sx+sW/2, y+11,{align:'center'});
-      txt('#5A7FA8'); pdf.setFontSize(5.5); pdf.setFont('helvetica','normal');
+      // Uzun etiketleri ("MESAI KALINAN SURE") dar kutuya sığdırmak için
+      // font boyutunu otomatik küçült.
+      txt('#5A7FA8'); pdf.setFont('helvetica','normal');
+      var _sCapFont=5.5;
+      pdf.setFontSize(_sCapFont);
+      while(_sCapFont>3.6 && pdf.getTextWidth(s.l) > sW-3){ _sCapFont-=0.2; pdf.setFontSize(_sCapFont); }
       pdf.text(s.l, sx+sW/2, y+16,{align:'center'});
     });
 
@@ -1412,7 +1423,7 @@ async function aoGeneratePdfAndMail() {
     [
       {title:'Klasman Dagilimi',    png:p1, legend:top8.map(function(k,i){return{l:_tr(k.ad).slice(0,15),v:fmtN(k.adet),c:klColors[i]||'#546E7A'};})},
       {title:'Perf. Bant Dagilimi', png:p2, legend:activeBands.map(function(b){return{l:b.l,v:b.n+' k.',c:b.c};})},
-      {title:'Mesai Dagilimi',      png:p3, legend:[{l:'Normal',v:_aoFmtSn(normalSn)||'--',c:'#1565C0'},{l:'Overtime',v:_aoFmtSn(otSn)||'--',c:'#E65100'}]}
+      {title:'Mesai Dagilimi',      png:p3, legend:[{l:'Normal',v:_aoFmtSn(normalSn)||'--',c:'#1565C0'},{l:'Mesai Kalinan Sure',v:_aoFmtSn(otSn)||'--',c:'#E65100'}]}
     ].forEach(function(g,gi){
       var gx = M + gi*(gCardW+2);
       var cardH = 78;
@@ -1565,7 +1576,7 @@ async function aoGeneratePdfAndMail() {
       '  Calisma Gunu    : '+(insp.gunSayisi||0)+'\n'+
       '  Standart Sure   : '+(_aoFmtSn(totalStd)||'--')+'\n'+
       '  Gerceklesen     : '+(totalFiil>0?_aoFmtSn(totalFiil):'--')+'\n'+
-      (otDk>0?'  Overtime       : '+otDk+' dk\n':'')+
+      (otDk>0?'  Mesai Kalinan Sure : '+otDk+' dk\n':'')+
       '\nDetayli rapor (PDF) ektedir.\n\nIyi calismalar,\nKalibRe Panel'
     );
     window.open('mailto:?subject='+subj+'&body='+body);
