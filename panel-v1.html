@@ -130,6 +130,10 @@
       <span class="nav-icon">🏭</span>
       <span>Depo Analizi</span>
     </div>
+    <div class="nav-item" id="nav-fazla-mesai" onclick="showPage('fazla-mesai')">
+      <span class="nav-icon">⏰</span>
+      <span>Fazla Mesai Takip</span>
+    </div>
 
     <div class="sidebar-footer" style="margin-top: auto; padding: 12px 10px 0; border-top: 1px solid rgba(255,255,255,.06);">
       <div style="display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-radius: 7px; background: rgba(255,255,255,.04); margin-bottom: 6px;">
@@ -1318,6 +1322,156 @@
       <div id="depo-simulasyon-icerik" style="display:none"></div>
     </div>
 
+    <!-- ══════════════════════════ FAZLA MESAİ TAKİP ══════════════════════════ -->
+    <div id="page-fazla-mesai" class="page">
+      <div class="ph">
+        <div class="ph-left">
+          <h1>⏰ Fazla Mesai Takip</h1>
+          <p style="font-size:12px;color:var(--muted)">Yönetmeliğe göre yıllık fazla mesai üst sınırı <strong>270 saat</strong>tir — ekip ve inspector bazında yıllık/aylık mesai kalma oranlarını izleyin</p>
+        </div>
+        <div class="ph-buttons">
+          <button class="btn btn-success" id="fm-senkron-btn" onclick="fazlaMesaiSenkronizeEt(this)">📤 Excel Verisini Senkronize Et</button>
+          <button class="btn btn-primary" onclick="exportFazlaMesaiToExcel()">📊 Excel'e Aktar</button>
+        </div>
+      </div>
+
+      <!-- Kural bilgi şeridi -->
+      <div style="margin-bottom:16px;padding:12px 16px;background:linear-gradient(135deg,#0B1F3A 0%,#1565C0 100%);border-radius:10px;color:#fff;font-size:12px;line-height:1.7;display:flex;align-items:center;gap:12px">
+        <span style="font-size:20px">⚖️</span>
+        <div>
+          <strong>Hesaplama kuralı:</strong> Hafta içi/Cumartesi bir günde en geç kapama saati <strong>16:30'dan sonra</strong> ise o gün <strong>sabit 3 saat 30 dakika</strong> fazla mesai sayılır. <strong>Pazar günü</strong> veya <strong>resmi tatil/bayram</strong> günü herhangi bir kayıt varsa o gün <strong>tam gün — sabit 7 saat 30 dakika</strong> fazla mesai sayılır. Yıllık yasal üst sınır: <strong>270 saat</strong>.
+        </div>
+      </div>
+
+      <!-- Resmi Tatiller Yönetimi (collapsible) -->
+      <div class="card" style="margin-bottom:16px;overflow:hidden">
+        <div class="card-header" onclick="toggleSection('fm-tatil-body','fm-tatil-chevron')" style="background:linear-gradient(135deg,#6A1B9A 0%,#AD1457 100%);border-bottom:none;padding:14px 16px;cursor:pointer;user-select:none">
+          <h2 style="color:#fff;gap:8px">
+            <span style="background:rgba(255,255,255,.15);border-radius:7px;padding:4px 7px;font-size:13px">🎌</span>
+            Resmi Tatil / Bayram Günleri Yönetimi
+          </h2>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:10px;color:rgba(255,255,255,.75);font-weight:500">Göstermek için tıklayın</span>
+            <span id="fm-tatil-chevron" style="font-size:14px;color:#fff;transition:transform .2s">▼</span>
+          </div>
+        </div>
+        <div id="fm-tatil-body" style="display:none">
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.6">
+              Buraya eklenen tarihlerde çalışan inspector'lar, Pazar günüyle aynı kuralla (o gün çalışıldıysa <strong>tam gün — 7 saat 30 dakika</strong>) fazla mesaiye sayılır. Sabit tarihli resmi bayramları (1 Ocak, 23 Nisan, 1 Mayıs, 19 Mayıs, 15 Temmuz, 30 Ağustos, 29 Ekim) ve her yıl değişen dini bayramları (Ramazan/Kurban Bayramı) elle ekleyin.
+              <strong style="color:var(--red)">Not:</strong> Bu listeye tarih ekleyip/çıkarmak, sadece BUNDAN SONRA "Senkronize Et" ile gönderilecek Excel verilerini etkiler — daha önce senkronize edilmiş kayıtları geriye dönük değiştirmez.
+            </p>
+            <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+              <div>
+                <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">Tarih</label>
+                <input type="date" id="fm-tatil-tarih" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px">
+              </div>
+              <div>
+                <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">Tatil Adı</label>
+                <input type="text" id="fm-tatil-adi" placeholder="örn. Kurban Bayramı 1. Gün" style="padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:13px;width:220px">
+              </div>
+              <button class="btn btn-primary" style="padding:9px 18px" onclick="resmiTatilEkleHandler()">➕ Ekle</button>
+            </div>
+            <div id="fm-tatil-listesi"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filtreler -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-body" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <div>
+            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">📅 Yıl</label>
+            <select id="fm-yil-filtre" onchange="renderFazlaMesaiSayfasi()"
+              style="width:130px;padding:9px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff"></select>
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">👥 Ekip Yöneticisi</label>
+            <select id="fm-ekip-filtre" onchange="renderFazlaMesaiSayfasi()"
+              style="width:240px;padding:9px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff">
+              <option value="">👥 Tüm Ekip Yöneticileri</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:200px">
+            <label style="display:block;font-size:11px;color:var(--muted);margin-bottom:4px;font-weight:600">🔍 Inspector Ara</label>
+            <input type="text" id="fm-arama" placeholder="Inspector adı ara..." oninput="_fmRenderInspectorTablosu(_fmSonAgg, true)"
+              style="width:100%;max-width:280px;padding:9px 14px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI Kartları -->
+      <div id="fm-kpi-kartlari" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px"></div>
+
+      <!-- Seviye (tier) Kartları -->
+      <div style="margin:4px 0 10px;font-size:12.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.4px">Yıllık Limite Göre Dağılım</div>
+      <div id="fm-seviye-kartlari" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"></div>
+
+      <!-- Aylık Dağılım Grafiği -->
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><h2>📆 Aylık Fazla Mesai Dağılımı (saat)</h2></div>
+        <div class="card-body">
+          <div id="fm-aylik-grafik" style="display:flex;align-items:flex-end;gap:8px;padding-top:6px"></div>
+        </div>
+      </div>
+
+      <!-- Ekip Bazlı Tablo (sadece "Tüm Ekip Yöneticileri" seçiliyken görünür) -->
+      <div class="card" style="margin-bottom:16px" id="fm-ekip-tablo-wrap">
+        <div class="card-header"><h2>🧑‍🤝‍🧑 Ekip Bazında Fazla Mesai</h2></div>
+        <div class="card-body" style="padding:0">
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead>
+                <tr style="background:var(--offwhite)">
+                  <th style="text-align:left;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Ekip Yöneticisi</th>
+                  <th style="text-align:center;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Kişi Sayısı</th>
+                  <th style="text-align:center;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Ekip Toplamı</th>
+                  <th style="text-align:center;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Kişi Başı Ort.</th>
+                  <th style="text-align:left;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Kişi Başı Limit Kullanımı</th>
+                </tr>
+              </thead>
+              <tbody id="fm-ekip-tablo-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inspector Bazlı Tablo -->
+      <div class="card">
+        <div class="card-header"><h2>🧑‍💼 Inspector Bazında Fazla Mesai</h2></div>
+        <div class="card-body" style="padding:0">
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead>
+                <tr style="background:var(--offwhite)">
+                  <th style="text-align:left;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Inspector</th>
+                  <th style="text-align:left;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Ekip</th>
+                  <th style="text-align:center;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Toplam (Yıl)</th>
+                  <th style="text-align:center;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Pazar</th>
+                  <th style="text-align:center;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Resmi Tatil</th>
+                  <th style="text-align:left;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Limit Kullanımı</th>
+                  <th style="text-align:center;padding:10px 12px;font-size:11px;color:var(--navy);text-transform:uppercase">Durum</th>
+                </tr>
+              </thead>
+              <tbody id="fm-insp-tablo-body"></tbody>
+            </table>
+          </div>
+          <div id="fm-insp-pager" style="display:flex;align-items:center;justify-content:center;padding:14px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fazla Mesai Seviyesi Detay Popup -->
+    <div class="modal-overlay" id="fm-seviye-popup" onclick="if(event.target===this)document.getElementById('fm-seviye-popup').style.display='none'">
+      <div class="modal-box" style="max-width:820px;width:94vw;max-height:88vh;overflow-y:auto">
+        <div class="modal-title" id="fm-seviye-popup-title">⏰ Fazla Mesai Seviyesi Detayı</div>
+        <div class="modal-sub" id="fm-seviye-popup-sub">Bu seviyedeki inspectorler</div>
+        <div id="fm-seviye-popup-content" style="margin:16px 0"></div>
+        <div class="modal-actions">
+          <button class="btn" onclick="document.getElementById('fm-seviye-popup').style.display='none'">Kapat</button>
+        </div>
+      </div>
+    </div>
 
   </main>
 </div>
