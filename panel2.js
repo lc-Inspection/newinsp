@@ -1346,7 +1346,7 @@ async function aoGeneratePdfAndMail() {
     // veriyi, aynı sırayla gösterir.
     var y3 = y+36;
     var metrikler=[
-      { l:'GUNLUK ORT. (ADET)', v:(duzPerf!==null&&duzPerf!==undefined)?'%'+duzPerf:'--',
+      { l:'GUNLUK ORT. (NORMAL SAATTE)', v:(_efektifPdf&&_efektifPdf.gunlukOrtNormal!==null&&_efektifPdf.gunlukOrtNormal!==undefined)?fmtN(_efektifPdf.gunlukOrtNormal)+' adet':'--',
         sub:seviyeAdet?_tr(seviyeAdet.label).toUpperCase():'VERI YOK', c:seviyeAdet?seviyeHex(seviyeAdet):'#9E9E9E' },
       { l:'IKINCI INSPECTION', v:(iiPercent!==null)?'%'+iiPercent:'--',
         sub:seviyeIkinci?_tr(seviyeIkinci.label).toUpperCase():'VERI YOK', c:seviyeIkinci?seviyeHex(seviyeIkinci):'#9E9E9E' },
@@ -1361,7 +1361,12 @@ async function aoGeneratePdfAndMail() {
       fill(mt.c); pdf.rect(mx,y3,_n(mW),2.2,'F');
       txt(mt.c); pdf.setFontSize(11); pdf.setFont('helvetica','bold');
       pdf.text(mt.v, mx+mW/2, y3+9.5,{align:'center'});
-      txt('#5A7FA8'); pdf.setFontSize(5); pdf.setFont('helvetica','normal');
+      // Etiket uzun olabilir ("GUNLUK ORT. (NORMAL SAATTE)") — kutuya
+      // sığana kadar font boyutunu otomatik küçült.
+      txt('#5A7FA8'); pdf.setFont('helvetica','normal');
+      var _capFont=5;
+      pdf.setFontSize(_capFont);
+      while(_capFont>3.4 && pdf.getTextWidth(mt.l) > mW-4){ _capFont-=0.2; pdf.setFontSize(_capFont); }
       pdf.text(mt.l, mx+mW/2, y3+14.5,{align:'center'});
       txt(mt.c); pdf.setFontSize(4.6); pdf.setFont('helvetica','bold');
       pdf.text(mt.sub, mx+mW/2, y3+18,{align:'center'});
@@ -1552,7 +1557,7 @@ async function aoGeneratePdfAndMail() {
       'Merhaba,\n\n'+(insp.ins||'')+' performans raporu ekte sunulmustur.\n\n'+
       '-- OZET --\n'+
       '  Genel Degerlendirme : '+_tr(genelLabel).toUpperCase()+(ortalamaPuan!==null?' (ortalama '+ortalamaPuan.toFixed(1)+'/5)':'')+'\n'+
-      '    - Gunluk Ort. (Adet)   : %'+duzPerf+(seviyeAdet?' - '+_tr(seviyeAdet.label):'')+'\n'+
+      '    - Gunluk Ort. (Normal Saatte): '+((_efektifPdf&&_efektifPdf.gunlukOrtNormal!==null&&_efektifPdf.gunlukOrtNormal!==undefined)?fmtN(_efektifPdf.gunlukOrtNormal)+' adet':'--')+(seviyeAdet?' - '+_tr(seviyeAdet.label):'')+'\n'+
       '    - Ikinci Inspection    : '+(iiPercent!==null?'%'+iiPercent:'Veri Yok')+(seviyeIkinci?' - '+_tr(seviyeIkinci.label):'')+'\n'+
       '    - Teknik Inceleme      : '+(tiPercent!==null?'%'+tiPercent:'Veri Yok')+(seviyeTeknik?' - '+_tr(seviyeTeknik.label):'')+'\n'+
       '  Toplam Adet     : '+fmtN(totalAdet)+'\n'+
