@@ -622,7 +622,7 @@ function _gunlukEkAdetAl(_inspectorAdiYokSayilir) {
 // fazlaMesaiArsivi: seçili yıl için sunucudan çekilen, kalıcı gün-bazlı
 // fazla mesai kayıtları — [{inspectorAdi, tarih:'YYYY-MM-DD', dakika, tip}].
 // Excel her yeniden yüklendiğinde/değiştiğinde KAYBOLMAZ — "Senkronize Et"
-// ile sunucuya yazılıp yıl bazında biriktirilir (bkz. fazlaMesaiSenkronizeEt).
+// ile sunucuya yazılıp yıl bazında biriktirilir (bkz. _pushFazlaMesaiArsiviToServer).
 let resmiTatiller = [];
 let fazlaMesaiArsivi = [];
 let fazlaMesaiSeciliYil = new Date().getFullYear();
@@ -2270,7 +2270,7 @@ async function pushPerformansManual(ev) {
       // sorunu oluşmaz (fire-and-forget, ana akışı bekletmez/bozmaz).
       _pushDepoAnalizToServer();
       // Fazla mesai arşivi de aynı anda, OTOMATİK olarak sunucuya senkronize
-      // edilir — kullanıcının ayrıca "Excel Verisini Senkronize Et" butonuna
+      // edilir — kullanıcının ayrıca eski "Excel Verisini Senkronize Et" butonuna
       // basmasına GEREK YOKTUR. UPSERT (inspector_adi, tarih) mantığı
       // sayesinde aynı tarih tekrar gönderilse bile ÇİFT/TOPLANARAK
       // kaydedilmez; sadece o günün kaydı güncellenir. Farklı çeyreklerin
@@ -3833,72 +3833,43 @@ function _fmTarihGoster(iso) {
 }
 
 // ── Fazla Mesai Arşivi — sunucudan çek (yıl bazlı) ───────────────────────
+// NOT: "Çeyrek" sistemi Q4'te (Kas-Ara-Oca) takvim yılı sınırını aşar — Ocak
+// ayı, bir önceki Kas-Ara ile AYNI çeyreğe/döneme sayılır (bkz.
+// _tarihCeyrekAnahtari). Bu yüzden seçili "yıl" için sadece o takvim yılının
+// kayıtları değil, BİR SONRAKİ takvim yılının Ocak ayı kayıtları da çekilip
+// birleştirilir — aksi halde Q4 filtresi seçildiğinde Ocak verisi eksik
+// görünürdü.
 async function loadFazlaMesaiArsivi(yil) {
   try {
     const url = appConfig.sheetsWebAppUrl;
     const token = appConfig.sheetsApiToken;
     if (!url || !token) return;
-    const data = await jsonpFetch(url, { action: 'getFazlaMesaiArsivi', token, yil });
-    if (data && data.status === 'ok' && Array.isArray(data.veri)) {
-      fazlaMesaiArsivi = data.veri;
-    } else {
-      fazlaMesaiArsivi = [];
-    }
+    const yilInt = parseInt(yil, 10);
+    const [dataYil, dataSonrakiYil] = await Promise.all([
+      jsonpFetch(url, { action: 'getFazlaMesaiArsivi', token, yil }),
+      jsonpFetch(url, { action: 'getFazlaMesaiArsivi', token, yil: String(yilInt + 1) })
+    ]);
+    const veriYil = (dataYil && dataYil.status === 'ok' && Array.isArray(dataYil.veri)) ? dataYil.veri : [];
+    const veriSonraki = (dataSonrakiYil && dataSonrakiYil.status === 'ok' && Array.isArray(dataSonrakiYil.veri)) ? dataSonrakiYil.veri : [];
+    // Sonraki takvim yılından SADECE Ocak ayı kayıtları alınır (Q4'ün son ayı)
+    const veriSonrakiOcak = veriSonraki.filter(k => String(k.tarih || '').slice(5, 7) === '01');
+    fazlaMesaiArsivi = veriYil.concat(veriSonrakiOcak);
   } catch (e) {
     console.warn('Fazla mesai arşivi çekme hatası:', e.message);
     fazlaMesaiArsivi = [];
   }
 }
 
-// "📤 Excel Verisini Senkronize Et" — o an yüklü olan Excel'deki (performansData)
-// her inspector'ın fazlaMesaiGunlukDetay'ını (hesaplaFazlaMesaiGunleri ile
-// önceden hesaplanmış SABİT kurallı gün detayı) sunucudaki kalıcı arşive
-// UPSERT eder. Aynı gün tekrar gönderilirse üzerine yazılır (idempotent),
-// böylece Excel'i tekrar yüklemek çift kayıt oluşturmaz.
-async function fazlaMesaiSenkronizeEt(btn) {
-  if (!performansData || !performansData.length) {
-    alert('⚠️ Önce Excel yükleyip performans hesaplaması yapmanız gerekiyor.');
-    return;
-  }
-  const kayitlar = [];
-  performansData.forEach(insp => {
-    const detay = insp.fazlaMesaiGunlukDetay || {};
-    Object.entries(detay).forEach(([tarih, bilgi]) => {
-      kayitlar.push({ inspectorAdi: insp.ins, tarih, dakika: bilgi.dakika, tip: bilgi.tip });
-    });
-  });
-  if (!kayitlar.length) {
-    alert('ℹ️ Yüklü Excel verisinde fazla mesai kaydı bulunamadı (kimse 16:30 sonrası kapatmamış / Pazar-tatil günü çalışmamış).');
-    return;
-  }
-  const orig = btn ? btn.textContent : null;
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gönderiliyor...'; }
-  try {
-    const url = appConfig.sheetsWebAppUrl;
-    const token = appConfig.sheetsApiToken;
-    if (!url || !token) throw new Error('Sunucu bağlantı ayarları eksik.');
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'setFazlaMesaiArsivi', token, kayitlar })
-    });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const resp = await res.json();
-    if (!resp || resp.status !== 'ok') throw new Error(resp?.message || 'gönderim hatası');
-    if (btn) { btn.textContent = '✅ Gönderildi ('+kayitlar.length+' kayıt)'; }
-    await loadFazlaMesaiArsivi(fazlaMesaiSeciliYil);
-    renderFazlaMesaiSayfasi();
-    setTimeout(() => { if (btn) { btn.textContent = orig; btn.disabled = false; } }, 2000);
-  } catch (e) {
-    if (btn) { btn.textContent = '❌ Hata'; btn.disabled = false; }
-    alert('⚠️ Senkronizasyon sırasında hata oluştu:\n\n' + e.message);
-  }
-}
+// NOT: Ayrı bir "Excel Verisini Senkronize Et" butonu ARTIK YOK — fazla mesai
+// arşivi, "📤 Sheets'e Gönder" (pushPerformansManual) her çalıştığında
+// _pushFazlaMesaiArsiviToServer() ile OTOMATİK olarak sunucuya senkronize
+// ediliyor (bkz. yukarıdaki tanım). Manuel ikinci bir adıma gerek yok.
 
 // ── Filtreler ─────────────────────────────────────────────────────────────
 async function populateFazlaMesaiFiltreler() {
   const yilSel = document.getElementById('fm-yil-filtre');
   const ekipSel = document.getElementById('fm-ekip-filtre');
+  const ceyrekSel = document.getElementById('fm-ceyrek-filtre');
   if (yilSel) {
     const buYil = new Date().getFullYear();
     const yillar = [];
@@ -3907,6 +3878,13 @@ async function populateFazlaMesaiFiltreler() {
     yilSel.innerHTML = yillar.map(y => `<option value="${y}">${y}</option>`).join('');
     yilSel.value = yillar.includes(oncekiSecim) ? oncekiSecim : buYil;
     fazlaMesaiSeciliYil = parseInt(yilSel.value, 10);
+  }
+  if (ceyrekSel && !ceyrekSel.dataset.dolduruldu) {
+    // Panelin geri kalanında (Çeyrek Performans Arşivi) kullanılan SABİT
+    // Q1-Q4 tanımıyla (_QUARTER_META) BİREBİR aynı seçenekler.
+    ceyrekSel.innerHTML = '<option value="">📆 Tüm Yıl</option>' +
+      ['Q1', 'Q2', 'Q3', 'Q4'].map(q => `<option value="${q}">${q} (${_QUARTER_META[q].months})</option>`).join('');
+    ceyrekSel.dataset.dolduruldu = '1';
   }
   if (ekipSel) {
     await _silentLoadUsersCache();
@@ -3939,11 +3917,23 @@ function _fmSaatStr(dakika) {
   return (Number.isInteger(s) ? String(s) : s.toFixed(1).replace('.', ',')) + ' saat';
 }
 
-// ── Yıl + ekip filtresine göre agregasyon ────────────────────────────────
+// ── Yıl + çeyrek + ekip filtresine göre agregasyon ───────────────────────
 // Her inspector için: toplam/pazar/tatil dakika, aylık kırılım (12 ay),
 // seviye. Ekip bazlı toplamlar da aynı çağrıda üretilir.
-function _fmAgregasyon(yil, ekipUsername) {
-  let kayitlar = fazlaMesaiArsivi.filter(k => (k.tarih || '').startsWith(String(yil)));
+// ceyrek: '' (Tüm Yıl) | 'Q1' | 'Q2' | 'Q3' | 'Q4' — panelin geri kalanında
+// kullanılan SABİT çeyrek sistemiyle (Q1 Şub-Mar-Nis · Q2 May-Haz-Tem ·
+// Q3 Ağu-Eyl-Eki · Q4 Kas-Ara-Oca) BİREBİR aynı tanım kullanılır
+// (bkz. _ayToQuarter / _tarihCeyrekAnahtari), böylece Q4 seçildiğinde bir
+// sonraki takvim yılının Ocak ayı da doğru şekilde dahil edilir.
+function _fmAgregasyon(yil, ekipUsername, ceyrek) {
+  let kayitlar = fazlaMesaiArsivi.filter(k => {
+    const anahtari = _tarihCeyrekAnahtari(k.tarih); // örn. "Q4-2026"
+    if (!anahtari) return false;
+    const [kCeyrek, kYil] = anahtari.split('-');
+    if (String(kYil) !== String(yil)) return false;
+    if (ceyrek && kCeyrek !== ceyrek) return false;
+    return true;
+  });
 
   let ekipUyeleriSet = null;
   let ekipEtiket = {}; // inspectorKey(lower) -> ekip yöneticisi display name
@@ -4015,16 +4005,18 @@ function _fmAgregasyon(yil, ekipUsername) {
 async function renderFazlaMesaiSayfasi(skipLoad) {
   const yilSel = document.getElementById('fm-yil-filtre');
   const ekipSel = document.getElementById('fm-ekip-filtre');
+  const ceyrekSel = document.getElementById('fm-ceyrek-filtre');
   if (yilSel) fazlaMesaiSeciliYil = parseInt(yilSel.value, 10) || fazlaMesaiSeciliYil;
   const ekipUsername = ekipSel?.value || '';
+  const ceyrek = ceyrekSel?.value || '';
 
   if (!skipLoad) await loadFazlaMesaiArsivi(fazlaMesaiSeciliYil);
 
-  const agg = _fmAgregasyon(fazlaMesaiSeciliYil, ekipUsername);
+  const agg = _fmAgregasyon(fazlaMesaiSeciliYil, ekipUsername, ceyrek);
   _fmSonAgg = agg; // popup/export için sakla
 
   renderResmiTatilListesi();
-  _fmRenderKpi(agg);
+  _fmRenderKpi(agg, ceyrek);
   _fmRenderSeviyeKartlari(agg);
   _fmRenderEkipTablosu(agg, !!ekipUsername);
   _fmRenderInspectorTablosu(agg);
@@ -4032,14 +4024,17 @@ async function renderFazlaMesaiSayfasi(skipLoad) {
 }
 let _fmSonAgg = null;
 
-function _fmRenderKpi(agg) {
+function _fmRenderKpi(agg, ceyrek) {
   const el = document.getElementById('fm-kpi-kartlari');
   if (!el) return;
   const ortKullanim = agg.liste.length
     ? Math.round(agg.liste.reduce((s, p) => s + p.seviye.oran, 0) / agg.liste.length)
     : 0;
+  const donemEtiket = ceyrek && _QUARTER_META[ceyrek]
+    ? `${ceyrek} ${_QUARTER_META[ceyrek].months} · ${fazlaMesaiSeciliYil}`
+    : String(fazlaMesaiSeciliYil);
   const kpiler = [
-    { icon: '⏱️', v: _fmSaatStr(agg.toplamDk), l: 'Toplam Fazla Mesai (' + fazlaMesaiSeciliYil + ')', c: '#1565C0' },
+    { icon: '⏱️', v: _fmSaatStr(agg.toplamDk), l: 'Toplam Fazla Mesai (' + donemEtiket + ')', c: '#1565C0' },
     { icon: '⛪', v: _fmSaatStr(agg.pazarDk), l: 'Pazar Günü Mesaisi', c: '#6A1B9A' },
     { icon: '🎌', v: _fmSaatStr(agg.tatilDk), l: 'Resmi Tatil Mesaisi', c: '#AD1457' },
     { icon: '🚨', v: agg.kritikSayisi, l: 'Yasal Sınıra Yakın (Kritik)', c: '#C62828' },
@@ -4181,7 +4176,7 @@ function _fmRenderInspectorTablosu(agg, sifirlaSayfa) {
       <td style="padding:9px 12px;text-align:center">
         <span style="font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;background:${p.seviye.color}18;color:${p.seviye.color}">${_escapeHtml(p.seviye.label)}</span>
       </td>
-    </tr>`).join('') || `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted)">${fazlaMesaiSeciliYil} yılı için henüz senkronize edilmiş fazla mesai verisi yok. Yukarıdan "📤 Excel Verisini Senkronize Et" ile gönderin.</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted)">${fazlaMesaiSeciliYil} yılı / seçili çeyrek için henüz senkronize edilmiş fazla mesai verisi yok. Performans Analizi sayfasından Excel yükleyip "📤 Sheets'e Gönder" ile gönderin (fazla mesai arşivi otomatik güncellenir).</td></tr>`;
 
   const pagerEl = document.getElementById('fm-insp-pager');
   if (pagerEl) {
