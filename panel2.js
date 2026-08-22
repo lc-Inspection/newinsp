@@ -1105,12 +1105,42 @@ async function aoGeneratePdfAndMail() {
     var insp      = _aoInspector;
     var data      = _aoData || [];
     var hedef     = _aoHedef || 100;
+
+    // YENİ SİSTEM: Genel performans kategorisi (Fark Yaratan/İyi/Orta/
+    // Gelişime Açık/Zayıf) artık TEK bir hız oranından değil, ÜÇ metriğin
+    // (Günlük Ort. Adet · İkinci Inspection · Teknik İnceleme Skoru)
+    // ortalamasından geliyor — panel.js'teki getEfektifPerfSeviye() ile
+    // BİREBİR aynı fonksiyon çağrılıyor, böylece PDF ile panel HER ZAMAN
+    // aynı sonucu gösterir.
+    var _efektifPdf = (typeof getEfektifPerfSeviye === 'function')
+      ? getEfektifPerfSeviye(insp, insp.genelHizPerf || 0) : null;
+    var _iiPdf = (typeof getIkinciInspectionOraniForInspector === 'function')
+      ? getIkinciInspectionOraniForInspector(insp.ins) : null;
+    var _tiPdf = (typeof getTeknikIncelemeSkorForInspector === 'function')
+      ? getTeknikIncelemeSkorForInspector(insp.ins) : null;
+    var iiPercent = (_iiPdf && _iiPdf.count > 0) ? _iiPdf.percent : null;
+    var tiPercent = (_tiPdf && _tiPdf.count > 0) ? _tiPdf.percent : null;
+
+    // duzPerf: gösterilen büyük % — hâlâ adet-bazlı (Günlük Ort. Normal
+    // Saatte ÷ Günlük Hedef Adet × 100), panel.js'teki formülle aynı, hiç
+    // DEĞİŞMEDİ. genelLabel/genelCls ise artık 3 metriğin ortalamasından
+    // gelen KOMPOZİT kategori (eskiden sadece hız oranına bakıyordu).
+    var duzPerf    = _efektifPdf ? _efektifPdf.adetBazliPerf : 0;
+    var genelLabel = _efektifPdf ? _efektifPdf.label : '--';
+    var genelCls   = _efektifPdf ? _efektifPdf.cls   : null;
+    var ortalamaPuan = (_efektifPdf && _efektifPdf.genelSeviyeDetay) ? _efektifPdf.genelSeviyeDetay.ortalamaPuan : null;
+    var puanDetay     = (_efektifPdf && _efektifPdf.genelSeviyeDetay) ? _efektifPdf.genelSeviyeDetay.detay : '';
+
+    // Her metriğin KENDİ seviyesi (kompozit ortalamaya giren tek tek puanlar)
+    // — 3 metrik satırında ayrı ayrı gösterilecek.
+    var seviyeAdet   = (typeof _ceyrekMetrikSeviye === 'function' && _efektifPdf) ? _ceyrekMetrikSeviye(_efektifPdf.gunlukOrtNormal, 'gunlukOrt') : null;
+    var seviyeTeknik = (typeof _ceyrekMetrikSeviye === 'function' && tiPercent !== null) ? _ceyrekMetrikSeviye(tiPercent, 'teknikSkor') : null;
+    var seviyeIkinci = (typeof _ceyrekMetrikSeviye === 'function' && iiPercent !== null) ? _ceyrekMetrikSeviye(iiPercent, 'ikinciInsp') : null;
+
     var _stdSnP = insp.standartSure || 0;
     var _mesSnP = insp.mesaiSure || 0;
     var _kzSnP = (typeof getNotrKayipDakikaForInspector === 'function') ? getNotrKayipDakikaForInspector(insp.ins) * 60 : 0;
     if (_kzSnP > 0 && _mesSnP > _kzSnP) _mesSnP -= _kzSnP;
-    var _hamPP = (_stdSnP > 0 && _mesSnP > 0) ? Math.round((_stdSnP / _mesSnP) * 100) : (insp.genelHizPerf || 0);
-    var duzPerf   = Math.round(_hamPP * (100/hedef));
     var totalAdet = data.reduce(function(s,k){ return s+(k.adet||0); },0);
     var totalStd  = data.reduce(function(s,k){ return s+(k.standartSure||0); },0);
     var totalFiil = data.reduce(function(s,k){ return s+(k.kayitFiiliSure||0); },0);
@@ -1204,8 +1234,31 @@ async function aoGeneratePdfAndMail() {
     function fill(h){var c=hex2rgb(h);pdf.setFillColor(c[0],c[1],c[2]);}
     function stroke(h){var c=hex2rgb(h);pdf.setDrawColor(c[0],c[1],c[2]);}
     function txt(h){var c=hex2rgb(h);pdf.setTextColor(c[0],c[1],c[2]);}
+    // pHex/pLbl: SADECE kayıt-bazlı hız oranı (standart süre / gerçekleşen
+    // süre — "Perf. Bant Dağılımı" grafiği ve Sayfa 3'teki "ORAN%" sütunu)
+    // için kullanılır. Genel/kompozit performans kategorisi (üstteki büyük
+    // rozet) artık AŞAĞIDAKİ clsColor() ile, genelCls'e göre boyanır.
     function pHex(p){return p>=95?'#00897B':p>=85?'#1565C0':p>=70?'#F9A825':p>=50?'#EF5350':'#B71C1C';}
     function pLbl(p){return p>=95?'MUKEMMEL':p>=85?'IYI':p>=70?'ORTA':p>=50?'ZAYIF':'COK ZAYIF';}
+    // Kompozit (3 metrik ortalaması) kategori rengi — panel.js'teki
+    // performansClass -> renk eşlemesiyle BİREBİR aynı (bkz. renderDashboard).
+    var _CLS_RENK = {'perf-farkyaratan':'#00ACC1','perf-good':'#2563EB','perf-average':'#F57F17','perf-weak':'#EF5350','perf-verypoor':'#B71C1C'};
+    function clsColor(cls){ return _CLS_RENK[cls] || '#9E9E9E'; }
+    // Tek bir metrik seviyesi nesnesinin (bkz. _ceyrekMetrikSeviye) rengi —
+    // nesnenin 'color' alanı '#' ÖNEKSİZ hex olarak geliyor.
+    function seviyeHex(seviye){ return seviye ? ('#'+seviye.color) : '#9E9E9E'; }
+    // Uzun kompozit etiketleri ("Fark Yaratan", "Gelişime Açık") dar rozet
+    // kutusuna sığdırmak için 1-2 satıra böler.
+    function badgeLines(lbl){
+      var t=_tr(lbl||'--').toUpperCase();
+      if(t.length<=9) return [t];
+      var parts=t.split(' ');
+      if(parts.length>=2){
+        var mid=Math.ceil(parts.length/2);
+        return [parts.slice(0,mid).join(' '), parts.slice(mid).join(' ')];
+      }
+      return [t];
+    }
     function fmtN(n){return (n||0).toLocaleString('tr-TR');}
 
     function footer(page,total){
@@ -1245,7 +1298,7 @@ async function aoGeneratePdfAndMail() {
 
     // ── Inspector Kartı ───────────────────────────────────────────────────────
     y=48;
-    var perfC=pHex(duzPerf);
+    var perfC=clsColor(genelCls);
     // Sol renkli şerit
     fill(perfC); pdf.roundedRect(M,y,3,32,1,1,'F');
     // Kart zemin
@@ -1271,15 +1324,55 @@ async function aoGeneratePdfAndMail() {
     col1.forEach(function(t,i){pdf.text(t,M+9,y+18+i*5);});
     col2.forEach(function(t,i){pdf.text(t,M+90,y+18+i*5);});
 
-    // Performans rozeti
+    // Performans rozeti — büyük % hâlâ adet-bazlı (Günlük Ort. / Hedef),
+    // ama alttaki ETİKET artık panel.js ile BİREBİR aynı KOMPOZİT kategori
+    // (Günlük Ort. + İkinci Inspection + Teknik İnceleme ortalaması).
     fill(perfC); pdf.roundedRect(W-M-25,y+4,22,24,2,2,'F');
     txt('#ffffff'); pdf.setFontSize(18); pdf.setFont('helvetica','bold');
-    pdf.text('%'+duzPerf, W-M-14, y+16,{align:'center'});
-    pdf.setFontSize(6); pdf.setFont('helvetica','bold');
-    pdf.text(pLbl(duzPerf), W-M-14, y+23,{align:'center'});
+    pdf.text('%'+duzPerf, W-M-14, y+15,{align:'center'});
+    var _bl=badgeLines(genelLabel);
+    pdf.setFontSize(_bl.length>1?5:6); pdf.setFont('helvetica','bold');
+    if(_bl.length>1){
+      pdf.text(_bl[0], W-M-14, y+21,{align:'center'});
+      pdf.text(_bl[1], W-M-14, y+24.5,{align:'center'});
+    } else {
+      pdf.text(_bl[0], W-M-14, y+23,{align:'center'});
+    }
+
+    // ── Kompozit Performans — 3 Metrik Satırı ────────────────────────────────
+    // "Genel Değerlendirme" artık TEK bir hız oranı değil, üç metriğin
+    // ortalaması: Günlük Ort. (Adet) · İkinci Inspection · Teknik İnceleme.
+    // Panel.js'teki inspector detay kartındaki 3 ayrı kutuyla BİREBİR aynı
+    // veriyi, aynı sırayla gösterir.
+    var y3 = y+36;
+    var metrikler=[
+      { l:'GUNLUK ORT. (ADET)', v:(duzPerf!==null&&duzPerf!==undefined)?'%'+duzPerf:'--',
+        sub:seviyeAdet?_tr(seviyeAdet.label).toUpperCase():'VERI YOK', c:seviyeAdet?seviyeHex(seviyeAdet):'#9E9E9E' },
+      { l:'IKINCI INSPECTION', v:(iiPercent!==null)?'%'+iiPercent:'--',
+        sub:seviyeIkinci?_tr(seviyeIkinci.label).toUpperCase():'VERI YOK', c:seviyeIkinci?seviyeHex(seviyeIkinci):'#9E9E9E' },
+      { l:'TEKNIK INCELEME',   v:(tiPercent!==null)?'%'+tiPercent:'--',
+        sub:seviyeTeknik?_tr(seviyeTeknik.label).toUpperCase():'VERI YOK', c:seviyeTeknik?seviyeHex(seviyeTeknik):'#9E9E9E' }
+    ];
+    var mW=Math.max(1,_n((CW-4)/3));
+    metrikler.forEach(function(mt,i){
+      var mx=M+i*(mW+2);
+      fill('#ffffff'); pdf.roundedRect(mx,y3,mW,20,2,2,'F');
+      stroke('#DDEEFF'); pdf.setLineWidth(0.2); pdf.roundedRect(mx,y3,mW,20,2,2,'S');
+      fill(mt.c); pdf.rect(mx,y3,_n(mW),2.2,'F');
+      txt(mt.c); pdf.setFontSize(11); pdf.setFont('helvetica','bold');
+      pdf.text(mt.v, mx+mW/2, y3+9.5,{align:'center'});
+      txt('#5A7FA8'); pdf.setFontSize(5); pdf.setFont('helvetica','normal');
+      pdf.text(mt.l, mx+mW/2, y3+14.5,{align:'center'});
+      txt(mt.c); pdf.setFontSize(4.6); pdf.setFont('helvetica','bold');
+      pdf.text(mt.sub, mx+mW/2, y3+18,{align:'center'});
+    });
+    if(ortalamaPuan!==null&&ortalamaPuan!==undefined){
+      txt('#8FA6BF'); pdf.setFontSize(5.5); pdf.setFont('helvetica','normal');
+      pdf.text('Genel Degerlendirme: Ortalama '+ortalamaPuan.toFixed(1)+'/5  ->  '+_tr(genelLabel).toUpperCase(), M, y3+24);
+    }
 
     // ── 5 Özet Stat Kartı ─────────────────────────────────────────────────────
-    y+=38;
+    y = y3+29;
     var stats=[
       {v:fmtN(totalAdet),      l:'TOPLAM ADET',   c:'#1565C0'},
       {v:_aoFmtSn(totalStd)||'--',l:'STANDART',    c:'#0B1F3A'},
@@ -1458,7 +1551,10 @@ async function aoGeneratePdfAndMail() {
     var body=encodeURIComponent(
       'Merhaba,\n\n'+(insp.ins||'')+' performans raporu ekte sunulmustur.\n\n'+
       '-- OZET --\n'+
-      '  Duz. Performans : %'+duzPerf+' ('+pLbl(duzPerf)+')\n'+
+      '  Genel Degerlendirme : '+_tr(genelLabel).toUpperCase()+(ortalamaPuan!==null?' (ortalama '+ortalamaPuan.toFixed(1)+'/5)':'')+'\n'+
+      '    - Gunluk Ort. (Adet)   : %'+duzPerf+(seviyeAdet?' - '+_tr(seviyeAdet.label):'')+'\n'+
+      '    - Ikinci Inspection    : '+(iiPercent!==null?'%'+iiPercent:'Veri Yok')+(seviyeIkinci?' - '+_tr(seviyeIkinci.label):'')+'\n'+
+      '    - Teknik Inceleme      : '+(tiPercent!==null?'%'+tiPercent:'Veri Yok')+(seviyeTeknik?' - '+_tr(seviyeTeknik.label):'')+'\n'+
       '  Toplam Adet     : '+fmtN(totalAdet)+'\n'+
       '  Kayit Sayisi    : '+data.length+'\n'+
       '  Calisma Gunu    : '+(insp.gunSayisi||0)+'\n'+
