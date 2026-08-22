@@ -616,6 +616,17 @@ function _gunlukEkAdetAl(_inspectorAdiYokSayilir) {
   return Number(gunlukEkAdetGlobal.ekAdet) || 0;
 }
 
+// ── FAZLA MESAİ TAKİP — global state ─────────────────────────────────────
+// resmiTatiller: admin tarafından yönetilen, sunucuda kalıcı tutulan resmi
+// tatil/bayram tarihleri listesi — [{tarih:'YYYY-MM-DD', adi:'...'}].
+// fazlaMesaiArsivi: seçili yıl için sunucudan çekilen, kalıcı gün-bazlı
+// fazla mesai kayıtları — [{inspectorAdi, tarih:'YYYY-MM-DD', dakika, tip}].
+// Excel her yeniden yüklendiğinde/değiştiğinde KAYBOLMAZ — "Senkronize Et"
+// ile sunucuya yazılıp yıl bazında biriktirilir (bkz. fazlaMesaiSenkronizeEt).
+let resmiTatiller = [];
+let fazlaMesaiArsivi = [];
+let fazlaMesaiSeciliYil = new Date().getFullYear();
+
 let nextId = 1;
 let secilenId = null;
 let sayfa = 1;
@@ -902,7 +913,8 @@ const ASSIGNABLE_TABS = [
   { id: 'performans',       label: 'Performans Analizi' },
   { id: 'ceyrek-performans',label: 'Çeyrek Performans' },
   { id: 'teknik-inceleme',  label: 'Teknik İnceleme' },
-  { id: 'depo-analiz',      label: '🏭 Depo Analizi' }
+  { id: 'depo-analiz',      label: '🏭 Depo Analizi' },
+  { id: 'fazla-mesai',      label: '⏰ Fazla Mesai Takip' }
 ];
 
 // Yeni bilgisayar tespiti: localStorage'da config hiç yoksa
@@ -2985,6 +2997,80 @@ function hesaplaGunlukMesaiSuresi(kayitListesi) {
   };
 }
 
+// ── FAZLA MESAİ TAKİP MODÜLÜ — özel, SABİT (flat) gün-bazlı kural ──────────
+// ÖNEMLİ: Bu fonksiyon, performans hesaplamasında kullanılan
+// hesaplaGunlukMesaiSuresi() (16:45 sınırı, ORANTILI overtime) ile
+// KARIŞTIRILMAMALI. "Fazla Mesai Takip" sayfası için tamamen AYRI, SABİT
+// bir kural kullanılıyor (kullanıcı talebiyle):
+//   • Pazar günü VEYA resmi tatil: o gün herhangi bir kayıt varsa → TAM GÜN
+//     7 saat 30 dakika (450 dk) fazla mesai sayılır (orantılı DEĞİL — az ya
+//     da çok çalışılmış olması fark etmez, o gün çalışıldıysa hep 7s30d).
+//   • Hafta içi/Cumartesi: o günün EN GEÇ bitiş saati 16:30'dan SONRA ise
+//     → SABİT 3 saat 30 dakika (210 dk) fazla mesai sayılır (orantılı
+//     DEĞİL — 16:31'de de, 19:50'de de kapatılsa hep 3s30d).
+//   • 16:30 veya öncesinde kapatılmışsa → fazla mesai yok (0 dk).
+function hesaplaFazlaMesaiGunleri(kayitListesi) {
+  if (!kayitListesi || kayitListesi.length === 0) return { gunlukDetay: {} };
+
+  // Her gün için o günün en geç bitiş saatini bul (hesaplaGunlukMesaiSuresi
+  // ile AYNI mantık — tek fark, buradaki SABİT/flat dakika ataması)
+  const gunBitisSaatleri = {};
+  kayitListesi.forEach(kayit => {
+    if (!kayit.parsedBaslangic) return;
+    const gun = kayit.parsedBaslangic.toDateString();
+    const bitis = kayit.parsedBitis || null;
+    if (!gunBitisSaatleri[gun]) {
+      gunBitisSaatleri[gun] = bitis;
+    } else if (bitis && bitis > gunBitisSaatleri[gun]) {
+      gunBitisSaatleri[gun] = bitis;
+    }
+  });
+
+  const gunlukDetay = {}; // key: 'YYYY-MM-DD' → { dakika, tip: 'pazar'|'tatil'|'normal' }
+
+  Object.entries(gunBitisSaatleri).forEach(([gunStr, enGecBitis]) => {
+    const gunBase = new Date(gunStr);
+    const haftaGunu = gunBase.getDay(); // 0 = Pazar
+    const isoTarih = _fmIsoTarih(gunBase);
+    const resmiTatilMi = _fmResmiTatilMi(isoTarih);
+
+    let dakika = 0;
+    let tip = 'normal';
+
+    if (haftaGunu === 0 || resmiTatilMi) {
+      // Pazar veya resmi tatil — o gün çalışılmışsa TAM GÜN (7s30d), orantısız
+      dakika = 450;
+      tip = (haftaGunu === 0) ? 'pazar' : 'tatil';
+    } else {
+      const sinir = new Date(gunBase); sinir.setHours(16, 30, 0, 0);
+      if (enGecBitis && enGecBitis > sinir) {
+        dakika = 210; // SABİT 3s30d — orantılı değil
+        tip = 'normal';
+      }
+    }
+
+    if (dakika > 0) {
+      gunlukDetay[isoTarih] = { dakika, tip };
+    }
+  });
+
+  return { gunlukDetay };
+}
+
+function _fmIsoTarih(d) {
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+// Bir tarihin (YYYY-MM-DD) resmi tatil olup olmadığını, admin tarafından
+// "Fazla Mesai Takip" sayfasında yönetilen resmiTatiller listesine göre
+// kontrol eder. Sabit ulusal günler + admin'in eklediği hareketli dini
+// bayram tarihleri (Ramazan/Kurban Bayramı vb.) buraya dahildir.
+function _fmResmiTatilMi(isoTarih) {
+  if (!Array.isArray(resmiTatiller) || !resmiTatiller.length) return false;
+  return resmiTatiller.some(t => t.tarih === isoTarih);
+}
+
 function parseMesaiSuresi(val) {
   if (val === null || val === undefined || val === '') return null;
   if (typeof val === 'string') {
@@ -3104,6 +3190,8 @@ function showPage(id, navEl){
     loadTeknikInceleme();
   } else if(id === 'depo-analiz') {
     loadDepoAnalizVeGoster();
+  } else if(id === 'fazla-mesai') {
+    populateFazlaMesaiFiltreler().then(() => renderFazlaMesaiSayfasi());
   }
 }
 
@@ -3599,6 +3687,497 @@ async function gunlukEkAdetKaydetHandler(btn) {
     btn.disabled = false;
     alert('⚠️ Günlük ek adet kaydedilirken bir hata oluştu:\n\n' + e.message);
   }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// FAZLA MESAİ TAKİP MODÜLÜ
+// ════════════════════════════════════════════════════════════════════════
+// Yönetmeliğe göre yıllık fazla mesai üst sınırı 270 saattir. Bu modül,
+// inspector'ların gün-bazlı fazla mesai kayıtlarını (bkz. yukarıdaki
+// hesaplaFazlaMesaiGunleri — 16:30 sonrası SABİT 3s30d, Pazar/resmi tatil
+// SABİT 7s30d kuralı) sunucuda YIL BAZINDA kalıcı olarak biriktirir, böylece
+// Excel her değiştiğinde/yeniden yüklendiğinde geçmiş veriler KAYBOLMAZ.
+
+const FAZLA_MESAI_YILLIK_LIMIT_SAAT = 270;
+
+// ── Resmi Tatiller — yükle/kaydet (kv_store, sunucuda kalıcı) ───────────
+async function loadResmiTatiller() {
+  try {
+    const url = appConfig.sheetsWebAppUrl;
+    const token = appConfig.sheetsApiToken;
+    if (!url || !token) return;
+    const data = await jsonpFetch(url, { action: 'getResmiTatiller', token });
+    if (data && data.status === 'ok' && Array.isArray(data.veri)) {
+      resmiTatiller = data.veri.slice().sort((a, b) => (a.tarih || '').localeCompare(b.tarih || ''));
+    }
+  } catch (e) {
+    console.warn('Resmi tatiller çekme hatası:', e.message);
+  }
+}
+
+async function _resmiTatillerKaydet() {
+  const url = appConfig.sheetsWebAppUrl;
+  const token = appConfig.sheetsApiToken;
+  if (!url || !token) throw new Error('Sunucu bağlantı ayarları eksik.');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'setResmiTatiller', token, tatiller: resmiTatiller })
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const resp = await res.json();
+  if (!resp || resp.status !== 'ok') throw new Error(resp?.message || 'kaydetme hatası');
+  return resp;
+}
+
+async function resmiTatilEkleHandler() {
+  const tarihInp = document.getElementById('fm-tatil-tarih');
+  const adiInp = document.getElementById('fm-tatil-adi');
+  if (!tarihInp || !tarihInp.value) { alert('⚠️ Lütfen bir tarih seçin.'); return; }
+  const tarih = tarihInp.value; // YYYY-MM-DD (input type=date)
+  const adi = (adiInp?.value || '').trim() || 'Resmi Tatil';
+  if (resmiTatiller.some(t => t.tarih === tarih)) { alert('⚠️ Bu tarih zaten listede.'); return; }
+  resmiTatiller.push({ tarih, adi });
+  resmiTatiller.sort((a, b) => (a.tarih || '').localeCompare(b.tarih || ''));
+  try {
+    await _resmiTatillerKaydet();
+    tarihInp.value = ''; if (adiInp) adiInp.value = '';
+    renderResmiTatilListesi();
+  } catch (e) {
+    alert('⚠️ Kaydedilemedi: ' + e.message);
+  }
+}
+
+async function resmiTatilSilHandler(tarih) {
+  if (!confirm('Bu resmi tatil tarihini silmek istediğinize emin misiniz?')) return;
+  resmiTatiller = resmiTatiller.filter(t => t.tarih !== tarih);
+  try {
+    await _resmiTatillerKaydet();
+    renderResmiTatilListesi();
+  } catch (e) {
+    alert('⚠️ Silinemedi: ' + e.message);
+  }
+}
+
+function renderResmiTatilListesi() {
+  const el = document.getElementById('fm-tatil-listesi');
+  if (!el) return;
+  if (!resmiTatiller.length) {
+    el.innerHTML = `<p style="font-size:12px;color:var(--muted);padding:8px 0">Henüz resmi tatil eklenmemiş. Sabit tarihli günler (1 Ocak, 23 Nisan, 1 Mayıs, 19 Mayıs, 15 Temmuz, 30 Ağustos, 29 Ekim) dışında kalan hareketli dini bayramları (Ramazan/Kurban Bayramı) buradan elle ekleyin.</p>`;
+    return;
+  }
+  el.innerHTML = resmiTatiller.map(t => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border:1px solid var(--border2);border-radius:8px;margin-bottom:6px;background:#fff">
+      <div>
+        <strong style="font-size:12.5px;color:var(--navy)">${_escapeHtml(t.adi || 'Resmi Tatil')}</strong>
+        <span style="font-size:11.5px;color:var(--muted);margin-left:8px">${_fmTarihGoster(t.tarih)}</span>
+      </div>
+      <button class="btn btn-danger" style="padding:4px 10px;font-size:11px" onclick="resmiTatilSilHandler('${t.tarih}')">🗑️</button>
+    </div>`).join('');
+}
+
+function _fmTarihGoster(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${d}.${m}.${y}`;
+}
+
+// ── Fazla Mesai Arşivi — sunucudan çek (yıl bazlı) ───────────────────────
+async function loadFazlaMesaiArsivi(yil) {
+  try {
+    const url = appConfig.sheetsWebAppUrl;
+    const token = appConfig.sheetsApiToken;
+    if (!url || !token) return;
+    const data = await jsonpFetch(url, { action: 'getFazlaMesaiArsivi', token, yil });
+    if (data && data.status === 'ok' && Array.isArray(data.veri)) {
+      fazlaMesaiArsivi = data.veri;
+    } else {
+      fazlaMesaiArsivi = [];
+    }
+  } catch (e) {
+    console.warn('Fazla mesai arşivi çekme hatası:', e.message);
+    fazlaMesaiArsivi = [];
+  }
+}
+
+// "📤 Excel Verisini Senkronize Et" — o an yüklü olan Excel'deki (performansData)
+// her inspector'ın fazlaMesaiGunlukDetay'ını (hesaplaFazlaMesaiGunleri ile
+// önceden hesaplanmış SABİT kurallı gün detayı) sunucudaki kalıcı arşive
+// UPSERT eder. Aynı gün tekrar gönderilirse üzerine yazılır (idempotent),
+// böylece Excel'i tekrar yüklemek çift kayıt oluşturmaz.
+async function fazlaMesaiSenkronizeEt(btn) {
+  if (!performansData || !performansData.length) {
+    alert('⚠️ Önce Excel yükleyip performans hesaplaması yapmanız gerekiyor.');
+    return;
+  }
+  const kayitlar = [];
+  performansData.forEach(insp => {
+    const detay = insp.fazlaMesaiGunlukDetay || {};
+    Object.entries(detay).forEach(([tarih, bilgi]) => {
+      kayitlar.push({ inspectorAdi: insp.ins, tarih, dakika: bilgi.dakika, tip: bilgi.tip });
+    });
+  });
+  if (!kayitlar.length) {
+    alert('ℹ️ Yüklü Excel verisinde fazla mesai kaydı bulunamadı (kimse 16:30 sonrası kapatmamış / Pazar-tatil günü çalışmamış).');
+    return;
+  }
+  const orig = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Gönderiliyor...'; }
+  try {
+    const url = appConfig.sheetsWebAppUrl;
+    const token = appConfig.sheetsApiToken;
+    if (!url || !token) throw new Error('Sunucu bağlantı ayarları eksik.');
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'setFazlaMesaiArsivi', token, kayitlar })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const resp = await res.json();
+    if (!resp || resp.status !== 'ok') throw new Error(resp?.message || 'gönderim hatası');
+    if (btn) { btn.textContent = '✅ Gönderildi ('+kayitlar.length+' kayıt)'; }
+    await loadFazlaMesaiArsivi(fazlaMesaiSeciliYil);
+    renderFazlaMesaiSayfasi();
+    setTimeout(() => { if (btn) { btn.textContent = orig; btn.disabled = false; } }, 2000);
+  } catch (e) {
+    if (btn) { btn.textContent = '❌ Hata'; btn.disabled = false; }
+    alert('⚠️ Senkronizasyon sırasında hata oluştu:\n\n' + e.message);
+  }
+}
+
+// ── Filtreler ─────────────────────────────────────────────────────────────
+async function populateFazlaMesaiFiltreler() {
+  const yilSel = document.getElementById('fm-yil-filtre');
+  const ekipSel = document.getElementById('fm-ekip-filtre');
+  if (yilSel) {
+    const buYil = new Date().getFullYear();
+    const yillar = [];
+    for (let y = buYil; y >= buYil - 4; y--) yillar.push(y);
+    const oncekiSecim = yilSel.value ? parseInt(yilSel.value, 10) : fazlaMesaiSeciliYil;
+    yilSel.innerHTML = yillar.map(y => `<option value="${y}">${y}</option>`).join('');
+    yilSel.value = yillar.includes(oncekiSecim) ? oncekiSecim : buYil;
+    fazlaMesaiSeciliYil = parseInt(yilSel.value, 10);
+  }
+  if (ekipSel) {
+    await _silentLoadUsersCache();
+    const managers = _usersCache.filter(u => (u.team || []).length > 0);
+    const oncekiSecim = ekipSel.value;
+    ekipSel.innerHTML = '<option value="">👥 Tüm Ekip Yöneticileri</option>' +
+      managers.map(u => `<option value="${_escapeHtml(u.username)}">${_escapeHtml(_formatDisplayName(u.username))} (${u.team.length} kişi)</option>`).join('');
+    if (oncekiSecim && managers.some(u => u.username === oncekiSecim)) ekipSel.value = oncekiSecim;
+  }
+}
+
+// ── Seviye (tier) sınıflandırma — 270 saatlik yıllık yasal sınıra göre ────
+function _fmSeviye(saat) {
+  const oran = (saat / FAZLA_MESAI_YILLIK_LIMIT_SAAT) * 100;
+  if (saat <= 0)   return { key: 'yok',    label: 'Mesai Kalmayan',        color: '#9E9E9E', oran };
+  if (oran >= 90)  return { key: 'kritik', label: 'Kritik (Sınıra Yakın)', color: '#C62828', oran };
+  if (oran >= 60)  return { key: 'yuksek', label: 'Yüksek',                color: '#F57F17', oran };
+  if (oran >= 30)  return { key: 'orta',   label: 'Orta Seviye',           color: '#1565C0', oran };
+  return                  { key: 'dusuk',  label: 'Düşük',                 color: '#00897B', oran };
+}
+
+// Dakikayı "saat" birimine, Türkçe ondalık virgülle, 1 basamak hassasiyetle
+// çevirir (kullanıcı talebiyle panelde HER ŞEY saat cinsinden gösterilir).
+function _fmSaat(dakika) {
+  const saat = (dakika || 0) / 60;
+  return Math.round(saat * 10) / 10;
+}
+function _fmSaatStr(dakika) {
+  const s = _fmSaat(dakika);
+  return (Number.isInteger(s) ? String(s) : s.toFixed(1).replace('.', ',')) + ' saat';
+}
+
+// ── Yıl + ekip filtresine göre agregasyon ────────────────────────────────
+// Her inspector için: toplam/pazar/tatil dakika, aylık kırılım (12 ay),
+// seviye. Ekip bazlı toplamlar da aynı çağrıda üretilir.
+function _fmAgregasyon(yil, ekipUsername) {
+  let kayitlar = fazlaMesaiArsivi.filter(k => (k.tarih || '').startsWith(String(yil)));
+
+  let ekipUyeleriSet = null;
+  let ekipEtiket = {}; // inspectorKey(lower) -> ekip yöneticisi display name
+  const managers = _usersCache.filter(u => (u.team || []).length > 0);
+  managers.forEach(u => {
+    (u.team || []).forEach(ad => { ekipEtiket[String(ad).toLowerCase().trim()] = _formatDisplayName(u.username); });
+  });
+  if (ekipUsername) {
+    const yonetici = _usersCache.find(u => u.username === ekipUsername);
+    ekipUyeleriSet = new Set((yonetici?.team || []).map(ad => String(ad).toLowerCase().trim()));
+    kayitlar = kayitlar.filter(k => ekipUyeleriSet.has(String(k.inspectorAdi || '').toLowerCase().trim()));
+  }
+
+  const perInsp = {}; // key: lower(ins) -> {ins, ekip, toplamDk, pazarDk, tatilDk, normalDk, aylikDk:[12]}
+  kayitlar.forEach(k => {
+    const key = String(k.inspectorAdi || '').toLowerCase().trim();
+    if (!key) return;
+    if (!perInsp[key]) {
+      perInsp[key] = {
+        ins: k.inspectorAdi,
+        ekip: ekipEtiket[key] || '—',
+        toplamDk: 0, pazarDk: 0, tatilDk: 0, normalDk: 0,
+        aylikDk: [0,0,0,0,0,0,0,0,0,0,0,0]
+      };
+    }
+    const p = perInsp[key];
+    const dk = Number(k.dakika) || 0;
+    p.toplamDk += dk;
+    if (k.tip === 'pazar') p.pazarDk += dk;
+    else if (k.tip === 'tatil') p.tatilDk += dk;
+    else p.normalDk += dk;
+    const ay = parseInt((k.tarih || '').split('-')[1], 10);
+    if (ay >= 1 && ay <= 12) p.aylikDk[ay - 1] += dk;
+  });
+
+  const liste = Object.values(perInsp).map(p => {
+    const saat = _fmSaat(p.toplamDk);
+    return { ...p, saat, seviye: _fmSeviye(saat) };
+  }).sort((a, b) => b.toplamDk - a.toplamDk);
+
+  // Ekip bazlı toplamlar (ekip filtresi UYGULANMAMIŞ ham veriden — filtre
+  // "Tüm Ekip Yöneticileri" iken tüm ekiplerin karşılaştırması için)
+  const ekipToplam = {};
+  if (!ekipUsername) {
+    liste.forEach(p => {
+      const ek = p.ekip;
+      if (!ekipToplam[ek]) ekipToplam[ek] = { ekip: ek, toplamDk: 0, kisiSayisi: 0 };
+      ekipToplam[ek].toplamDk += p.toplamDk;
+      ekipToplam[ek].kisiSayisi += 1;
+    });
+  }
+  const ekipListesi = Object.values(ekipToplam).map(e => ({
+    ...e, saat: _fmSaat(e.toplamDk), ortSaat: e.kisiSayisi > 0 ? _fmSaat(e.toplamDk / e.kisiSayisi) : 0
+  })).sort((a, b) => b.toplamDk - a.toplamDk);
+
+  const aylikToplam = [0,0,0,0,0,0,0,0,0,0,0,0];
+  liste.forEach(p => p.aylikDk.forEach((dk, i) => { aylikToplam[i] += dk; }));
+
+  return {
+    liste, ekipListesi, aylikToplam,
+    toplamDk: liste.reduce((s, p) => s + p.toplamDk, 0),
+    pazarDk: liste.reduce((s, p) => s + p.pazarDk, 0),
+    tatilDk: liste.reduce((s, p) => s + p.tatilDk, 0),
+    kritikSayisi: liste.filter(p => p.seviye.key === 'kritik').length
+  };
+}
+
+// ── Ana render fonksiyonu ────────────────────────────────────────────────
+async function renderFazlaMesaiSayfasi(skipLoad) {
+  const yilSel = document.getElementById('fm-yil-filtre');
+  const ekipSel = document.getElementById('fm-ekip-filtre');
+  if (yilSel) fazlaMesaiSeciliYil = parseInt(yilSel.value, 10) || fazlaMesaiSeciliYil;
+  const ekipUsername = ekipSel?.value || '';
+
+  if (!skipLoad) await loadFazlaMesaiArsivi(fazlaMesaiSeciliYil);
+
+  const agg = _fmAgregasyon(fazlaMesaiSeciliYil, ekipUsername);
+  _fmSonAgg = agg; // popup/export için sakla
+
+  renderResmiTatilListesi();
+  _fmRenderKpi(agg);
+  _fmRenderSeviyeKartlari(agg);
+  _fmRenderEkipTablosu(agg, !!ekipUsername);
+  _fmRenderInspectorTablosu(agg);
+  _fmRenderAylikGrafik(agg);
+}
+let _fmSonAgg = null;
+
+function _fmRenderKpi(agg) {
+  const el = document.getElementById('fm-kpi-kartlari');
+  if (!el) return;
+  const ortKullanim = agg.liste.length
+    ? Math.round(agg.liste.reduce((s, p) => s + p.seviye.oran, 0) / agg.liste.length)
+    : 0;
+  const kpiler = [
+    { icon: '⏱️', v: _fmSaatStr(agg.toplamDk), l: 'Toplam Fazla Mesai (' + fazlaMesaiSeciliYil + ')', c: '#1565C0' },
+    { icon: '⛪', v: _fmSaatStr(agg.pazarDk), l: 'Pazar Günü Mesaisi', c: '#6A1B9A' },
+    { icon: '🎌', v: _fmSaatStr(agg.tatilDk), l: 'Resmi Tatil Mesaisi', c: '#AD1457' },
+    { icon: '🚨', v: agg.kritikSayisi, l: 'Yasal Sınıra Yakın (Kritik)', c: '#C62828' },
+    { icon: '📊', v: '%' + ortKullanim, l: 'Ort. Limit Kullanım Oranı', c: '#00897B' }
+  ];
+  el.innerHTML = kpiler.map(k => `
+    <div class="card" style="flex:1;min-width:170px">
+      <div class="card-body" style="text-align:center;padding:16px 10px">
+        <div style="font-size:22px;margin-bottom:4px">${k.icon}</div>
+        <div style="font-size:22px;font-weight:800;color:${k.c}">${k.v}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px;text-transform:uppercase;letter-spacing:.3px">${k.l}</div>
+      </div>
+    </div>`).join('');
+}
+
+const FM_SEVIYE_SIRA = ['kritik', 'yuksek', 'orta', 'dusuk', 'yok'];
+function _fmRenderSeviyeKartlari(agg) {
+  const el = document.getElementById('fm-seviye-kartlari');
+  if (!el) return;
+  const sayilar = {};
+  FM_SEVIYE_SIRA.forEach(k => sayilar[k] = 0);
+  agg.liste.forEach(p => { sayilar[p.seviye.key] = (sayilar[p.seviye.key] || 0) + 1; });
+  const ornekler = {
+    kritik: '🚨 En Fazla Mesai Kalanlar', yuksek: '🟠 Yüksek Seviye',
+    orta: '🔵 Orta Seviye', dusuk: '🟢 Düşük Seviye', yok: '⚪ Mesai Kalmayanlar'
+  };
+  el.innerHTML = FM_SEVIYE_SIRA.map(key => {
+    const meta = _fmSeviye(key === 'kritik' ? FAZLA_MESAI_YILLIK_LIMIT_SAAT * 0.95 :
+                            key === 'yuksek' ? FAZLA_MESAI_YILLIK_LIMIT_SAAT * 0.75 :
+                            key === 'orta'   ? FAZLA_MESAI_YILLIK_LIMIT_SAAT * 0.45 :
+                            key === 'dusuk'  ? FAZLA_MESAI_YILLIK_LIMIT_SAAT * 0.15 : 0);
+    return `
+    <div class="card" style="flex:1;min-width:180px;cursor:pointer;border-left:4px solid ${meta.color}" onclick="fazlaMesaiSeviyeDetayAc('${key}')">
+      <div class="card-body" style="text-align:center;padding:16px 10px">
+        <div style="font-size:26px;font-weight:800;color:${meta.color}">${sayilar[key]}</div>
+        <div style="font-size:11.5px;color:var(--navy);margin-top:4px;font-weight:600">${ornekler[key]}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">inspector</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function fazlaMesaiSeviyeDetayAc(seviyeKey) {
+  if (!_fmSonAgg) return;
+  const liste = _fmSonAgg.liste.filter(p => p.seviye.key === seviyeKey).sort((a, b) => b.toplamDk - a.toplamDk);
+  const meta = liste[0]?.seviye || _fmSeviye(0);
+  const popup = document.getElementById('fm-seviye-popup');
+  const content = document.getElementById('fm-seviye-popup-content');
+  const titleEl = document.getElementById('fm-seviye-popup-title');
+  const subEl = document.getElementById('fm-seviye-popup-sub');
+  if (!popup || !content) return;
+
+  if (titleEl) titleEl.innerHTML = `<span style="width:12px;height:12px;border-radius:50%;background:${meta.color};display:inline-block;margin-right:6px"></span>${_escapeHtml(meta.label)} — Inspector Listesi`;
+  if (subEl) subEl.textContent = `${liste.length} inspector bu seviyede · ${fazlaMesaiSeciliYil} yılı`;
+
+  const satirlar = liste.map(p => `
+    <tr style="border-bottom:1px solid var(--border2)">
+      <td style="padding:9px 12px;font-weight:600;color:var(--navy)">${_escapeHtml(p.ins)}</td>
+      <td style="padding:9px 12px;font-size:11.5px;color:var(--muted)">${_escapeHtml(p.ekip)}</td>
+      <td style="padding:9px 12px;text-align:center;font-weight:700;color:${p.seviye.color}">${_fmSaatStr(p.toplamDk)}</td>
+      <td style="padding:9px 12px;text-align:center">${p.pazarDk > 0 ? _fmSaatStr(p.pazarDk) : '—'}</td>
+      <td style="padding:9px 12px;text-align:center">${p.tatilDk > 0 ? _fmSaatStr(p.tatilDk) : '—'}</td>
+      <td style="padding:9px 12px;text-align:center;font-size:11.5px;color:var(--muted)">%${Math.round(p.seviye.oran)}</td>
+    </tr>`).join('') || `<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--muted)">Bu seviyede inspector bulunamadı.</td></tr>`;
+
+  content.innerHTML = `
+    <div style="overflow-x:auto;max-height:420px;overflow-y:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:var(--offwhite);position:sticky;top:0">
+          <th style="text-align:left;padding:9px 12px">Inspector</th>
+          <th style="text-align:left;padding:9px 12px">Ekip</th>
+          <th style="text-align:center;padding:9px 12px">Toplam</th>
+          <th style="text-align:center;padding:9px 12px">Pazar</th>
+          <th style="text-align:center;padding:9px 12px">Resmi Tatil</th>
+          <th style="text-align:center;padding:9px 12px">Limit Kullanımı</th>
+        </tr></thead>
+        <tbody>${satirlar}</tbody>
+      </table>
+    </div>`;
+  popup.style.display = 'flex';
+}
+
+function _fmRenderEkipTablosu(agg, ekipFiltreliMi) {
+  const wrap = document.getElementById('fm-ekip-tablo-wrap');
+  if (!wrap) return;
+  if (ekipFiltreliMi || !agg.ekipListesi.length) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  const tbody = document.getElementById('fm-ekip-tablo-body');
+  if (!tbody) return;
+  tbody.innerHTML = agg.ekipListesi.map(e => {
+    const seviye = _fmSeviye(e.ortSaat);
+    return `
+    <tr style="border-bottom:1px solid var(--border2)">
+      <td style="padding:9px 12px;font-weight:600;color:var(--navy)">${_escapeHtml(e.ekip)}</td>
+      <td style="padding:9px 12px;text-align:center">${e.kisiSayisi}</td>
+      <td style="padding:9px 12px;text-align:center;font-weight:700;color:var(--blue)">${_fmSaatStr(e.toplamDk)}</td>
+      <td style="padding:9px 12px;text-align:center">${_fmSaatStr(e.toplamDk / Math.max(1,e.kisiSayisi))}</td>
+      <td style="padding:9px 12px">
+        <div style="background:var(--offwhite);border-radius:6px;height:8px;overflow:hidden;width:100%;max-width:160px">
+          <div style="height:100%;width:${Math.min(100, seviye.oran)}%;background:${seviye.color};border-radius:6px"></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+let _fmInspSayfa = 1;
+const FM_PER_PAGE = 20;
+function _fmRenderInspectorTablosu(agg, sifirlaSayfa) {
+  if (sifirlaSayfa) _fmInspSayfa = 1;
+  const tbody = document.getElementById('fm-insp-tablo-body');
+  if (!tbody) return;
+  const arama = (document.getElementById('fm-arama')?.value || '').toLowerCase().trim();
+  const liste = agg.liste.filter(p => !arama || (p.ins || '').toLowerCase().includes(arama));
+
+  const toplamSayfa = Math.max(1, Math.ceil(liste.length / FM_PER_PAGE));
+  if (_fmInspSayfa > toplamSayfa) _fmInspSayfa = toplamSayfa;
+  const baslangic = (_fmInspSayfa - 1) * FM_PER_PAGE;
+  const sayfaListesi = liste.slice(baslangic, baslangic + FM_PER_PAGE);
+
+  tbody.innerHTML = sayfaListesi.map(p => `
+    <tr style="border-bottom:1px solid var(--border2)">
+      <td style="padding:9px 12px;font-weight:600;color:var(--navy)">${_escapeHtml(p.ins)}</td>
+      <td style="padding:9px 12px;font-size:11.5px;color:var(--muted)">${_escapeHtml(p.ekip)}</td>
+      <td style="padding:9px 12px;text-align:center;font-weight:700;color:${p.seviye.color}">${_fmSaatStr(p.toplamDk)}</td>
+      <td style="padding:9px 12px;text-align:center">${p.pazarDk > 0 ? _fmSaatStr(p.pazarDk) : '—'}</td>
+      <td style="padding:9px 12px;text-align:center">${p.tatilDk > 0 ? _fmSaatStr(p.tatilDk) : '—'}</td>
+      <td style="padding:9px 12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="background:var(--offwhite);border-radius:6px;height:8px;flex:1;overflow:hidden;max-width:120px">
+            <div style="height:100%;width:${Math.min(100, p.seviye.oran)}%;background:${p.seviye.color};border-radius:6px"></div>
+          </div>
+          <span style="font-size:11px;color:var(--muted);white-space:nowrap">%${Math.round(p.seviye.oran)}</span>
+        </div>
+      </td>
+      <td style="padding:9px 12px;text-align:center">
+        <span style="font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;background:${p.seviye.color}18;color:${p.seviye.color}">${_escapeHtml(p.seviye.label)}</span>
+      </td>
+    </tr>`).join('') || `<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--muted)">${fazlaMesaiSeciliYil} yılı için henüz senkronize edilmiş fazla mesai verisi yok. Yukarıdan "📤 Excel Verisini Senkronize Et" ile gönderin.</td></tr>`;
+
+  const pagerEl = document.getElementById('fm-insp-pager');
+  if (pagerEl) {
+    pagerEl.innerHTML = toplamSayfa > 1 ? `
+      <button class="btn" style="padding:6px 12px;font-size:12px" ${_fmInspSayfa<=1?'disabled':''} onclick="_fmInspSayfa--;renderFazlaMesaiSayfasi(true)">‹ Önceki</button>
+      <span style="font-size:12px;color:var(--muted);margin:0 10px">Sayfa ${_fmInspSayfa} / ${toplamSayfa} (${liste.length} inspector)</span>
+      <button class="btn" style="padding:6px 12px;font-size:12px" ${_fmInspSayfa>=toplamSayfa?'disabled':''} onclick="_fmInspSayfa++;renderFazlaMesaiSayfasi(true)">Sonraki ›</button>
+    ` : `<span style="font-size:12px;color:var(--muted)">${liste.length} inspector</span>`;
+  }
+}
+
+const FM_AY_ISIMLERI = ['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+function _fmRenderAylikGrafik(agg) {
+  const el = document.getElementById('fm-aylik-grafik');
+  if (!el) return;
+  const maxDk = Math.max(1, ...agg.aylikToplam);
+  el.innerHTML = agg.aylikToplam.map((dk, i) => {
+    const yukselti = Math.max(3, Math.round((dk / maxDk) * 100));
+    return `
+    <div style="display:flex;flex-direction:column;align-items:center;flex:1;gap:6px">
+      <span style="font-size:10.5px;font-weight:700;color:var(--blue)">${dk > 0 ? _fmSaat(dk) : ''}</span>
+      <div style="width:100%;max-width:34px;height:110px;display:flex;align-items:flex-end;background:var(--offwhite);border-radius:6px;overflow:hidden">
+        <div style="width:100%;height:${yukselti}%;background:linear-gradient(180deg,#42A5F5,#1565C0);border-radius:6px 6px 0 0"></div>
+      </div>
+      <span style="font-size:10.5px;color:var(--muted);font-weight:600">${FM_AY_ISIMLERI[i]}</span>
+    </div>`;
+  }).join('');
+}
+
+// ── Excel'e Aktar ─────────────────────────────────────────────────────────
+function exportFazlaMesaiToExcel() {
+  if (!_fmSonAgg || !_fmSonAgg.liste.length) { alert('⚠️ Aktarılacak veri yok.'); return; }
+  const rows = _fmSonAgg.liste.map(p => ({
+    'Inspector': p.ins,
+    'Ekip Yöneticisi': p.ekip,
+    'Toplam Fazla Mesai (saat)': _fmSaat(p.toplamDk),
+    'Pazar Günü Mesaisi (saat)': _fmSaat(p.pazarDk),
+    'Resmi Tatil Mesaisi (saat)': _fmSaat(p.tatilDk),
+    'Normal Gün Mesaisi (saat)': _fmSaat(p.normalDk),
+    'Yıllık Limit Kullanım Oranı (%)': Math.round(p.seviye.oran),
+    'Seviye': p.seviye.label
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Fazla Mesai ' + fazlaMesaiSeciliYil);
+  XLSX.writeFile(wb, `Fazla_Mesai_Takip_${fazlaMesaiSeciliYil}.xlsx`);
 }
 
 // "📤 Çeyrek Verisi Gönder" butonunun handler'ı — Dashboard'daki güncel
@@ -7295,6 +7874,9 @@ function performansHesapla(){
     
     // Günlük mesai hesaplama
     const mesaiHesap = hesaplaGunlukMesaiSuresi(inspectorData.kayitListesi);
+    // Fazla Mesai Takip modülü için AYRI, SABİT kurallı hesaplama (16:30 sınırı,
+    // Pazar/resmi tatil tam gün) — bkz. hesaplaFazlaMesaiGunleri üstteki not.
+    const fazlaMesaiHesap = hesaplaFazlaMesaiGunleri(inspectorData.kayitListesi);
     
     let toplamStandartSure = 0;   
     let toplamAdet = 0;
@@ -7464,6 +8046,9 @@ function performansHesapla(){
       gunlukDetay: mesaiHesap ? mesaiHesap.gunlukDetay : [],
       toplamMesaistiSaniye: mesaiHesap ? (mesaiHesap.toplamMesaistiSaniye || 0) : 0,
       gunlukOvertimeDetay: mesaiHesap ? (mesaiHesap.gunlukOvertimeDetay || {}) : {},
+      // Fazla Mesai Takip sayfası için — SABİT kurallı gün-bazlı detay
+      // (bkz. hesaplaFazlaMesaiGunleri): {tarih: {dakika, tip}}
+      fazlaMesaiGunlukDetay: fazlaMesaiHesap ? (fazlaMesaiHesap.gunlukDetay || {}) : {},
       // 2.Kalite — yalnızca gösterim, genel performansa dahil değil
       toplam2KaliteAdet: toplam2KaliteAdet,
       toplam2KaliteStandartSure: toplam2KaliteStandartSure,
@@ -7624,9 +8209,15 @@ loadGunlukEkAdet().then(() => {
   // sunucudan taze veri geldikten sonra ilgili ekranları YENİDEN çiziyoruz
   // (ilk renderDashboard() çağrısı henüz localStorage cache'i bile
   // yüklenmeden önce çalışmış olabilir).
-  renderDashboard();
-  if (document.getElementById('page-performans')?.classList.contains('active')) {
+  renderDashboard();  if (document.getElementById('page-performans')?.classList.contains('active')) {
     renderGunlukEkAdetTablosu();
+  }
+});
+// Fazla Mesai Takip — resmi tatil listesi (Excel işlenirken tip='tatil'
+// ataması için gerekli, bu yüzden mümkün olduğunca erken yükleniyor)
+loadResmiTatiller().then(() => {
+  if (document.getElementById('page-fazla-mesai')?.classList.contains('active')) {
+    renderFazlaMesaiSayfasi();
   }
 });
 
