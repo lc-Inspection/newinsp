@@ -739,6 +739,48 @@ async function _pushDepoAnalizToServer() {
   }
 }
 
+// Fazla mesai arşivini PHP/MySQL'e gönderir — "📤 Sheets'e Gönder" her
+// çalıştığında OTOMATİK tetiklenir (ayrı bir "Senkronize Et" butonuna GEREK
+// YOKTUR). O an yüklü olan Excel'deki (performansData) her inspector'ın
+// fazlaMesaiGunlukDetay'ını (hesaplaFazlaMesaiGunleri ile önceden hesaplanmış
+// SABİT kurallı gün detayı) sunucudaki kalıcı arşive (inspector_adi, tarih)
+// anahtarıyla UPSERT eder — backend'de ON DUPLICATE KEY UPDATE kullanıldığı
+// için AYNI TARİH tekrar gönderilirse ÜST ÜSTE TOPLANMAZ, sadece o günün
+// kaydı güncellenir. FARKLI dönemlere/çeyreklere ait Excel'ler art arda
+// gönderildiğinde ise önceki dönemlerin kayıtları SİLİNMEZ, yıllık arşiv
+// birikmeye devam eder — böylece her çeyrek Excel yüklendiğinde sadece o
+// çeyreğin (yeni) tarihlerine bakılır, geçmiş dönem verisi kaybolmaz.
+async function _pushFazlaMesaiArsiviToServer() {
+  try {
+    if (!performansData || !performansData.length) return;
+    const kayitlar = [];
+    performansData.forEach(insp => {
+      const detay = insp.fazlaMesaiGunlukDetay || {};
+      Object.entries(detay).forEach(([tarih, bilgi]) => {
+        if (!bilgi || !bilgi.dakika) return;
+        kayitlar.push({ inspectorAdi: insp.ins, tarih, dakika: bilgi.dakika, tip: bilgi.tip });
+      });
+    });
+    if (!kayitlar.length) return; // Bu Excel'de fazla mesai günü yoksa gönderilecek bir şey yok
+    const res = await fetch(PHP_PERFORMANS_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'setFazlaMesaiArsivi', token: DEFAULT_API_TOKEN, kayitlar })
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const resp = await res.json();
+    if (!resp || resp.status !== 'ok') throw new Error(resp?.message || 'kaydetme hatası');
+    console.log('✅ Fazla mesai arşivi otomatik senkronize edildi:', resp.count, 'gün-bazlı kayıt');
+    // Fazla Mesai Takip sayfası o an açıksa, taze veriyle yeniden çizilsin.
+    if (typeof fazlaMesaiSeciliYil !== 'undefined') {
+      await loadFazlaMesaiArsivi(fazlaMesaiSeciliYil);
+      if (typeof renderFazlaMesaiSayfasi === 'function') renderFazlaMesaiSayfasi();
+    }
+  } catch (e) {
+    console.warn('Fazla mesai arşivi otomatik senkronizasyon hatası:', e.message);
+  }
+}
+
 // Sunucudaki (başka bir bilgisayardan en son gönderilmiş) depo analizini
 // çeker. Sadece bu oturumda henüz Excel yüklenip hesaplanmamışsa çağrılır —
 // aksi halde bu oturumun kendi taze verisi zaten daha güncel/doğrudur.
@@ -2227,6 +2269,14 @@ async function pushPerformansManual(ev) {
       // üzerine yazılır, böylece "başka bilgisayarda eski veri görünüyor"
       // sorunu oluşmaz (fire-and-forget, ana akışı bekletmez/bozmaz).
       _pushDepoAnalizToServer();
+      // Fazla mesai arşivi de aynı anda, OTOMATİK olarak sunucuya senkronize
+      // edilir — kullanıcının ayrıca "Excel Verisini Senkronize Et" butonuna
+      // basmasına GEREK YOKTUR. UPSERT (inspector_adi, tarih) mantığı
+      // sayesinde aynı tarih tekrar gönderilse bile ÇİFT/TOPLANARAK
+      // kaydedilmez; sadece o günün kaydı güncellenir. Farklı çeyreklerin
+      // Excel'leri art arda gönderildiğinde önceki dönemler silinmeden birikir
+      // (fire-and-forget, ana akışı bekletmez/bozmaz).
+      _pushFazlaMesaiArsiviToServer();
     } else {
       // ── ESKİ YOL: Google Apps Script / Sheets (artık kullanılmıyor, geriye dönük) ──
       // PHP_PERFORMANS_API_URL her zaman dolu olduğundan bu dal normalde hiç
