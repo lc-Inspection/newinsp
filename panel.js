@@ -3055,10 +3055,10 @@ function hesaplaGunlukMesaiSuresi(kayitListesi) {
 //   • Pazar günü VEYA resmi tatil: o gün herhangi bir kayıt varsa → TAM GÜN
 //     7 saat 30 dakika (450 dk) fazla mesai sayılır (orantılı DEĞİL — az ya
 //     da çok çalışılmış olması fark etmez, o gün çalışıldıysa hep 7s30d).
-//   • Hafta içi/Cumartesi: o günün EN GEÇ bitiş saati 16:30'dan SONRA ise
-//     → SABİT 3 saat 30 dakika (210 dk) fazla mesai sayılır (orantılı
-//     DEĞİL — 16:31'de de, 19:50'de de kapatılsa hep 3s30d).
-//   • 16:30 veya öncesinde kapatılmışsa → fazla mesai yok (0 dk).
+//   • Hafta içi/Cumartesi: o günün EN GEÇ bitiş saati 16:45'ten SONRA ise
+//     → SABİT 3 saat (180 dk) fazla mesai sayılır (orantılı DEĞİL —
+//     16:46'da da, 19:50'de de kapatılsa hep 3 saat).
+//   • 16:45 veya öncesinde kapatılmışsa → fazla mesai yok (0 dk).
 function hesaplaFazlaMesaiGunleri(kayitListesi) {
   if (!kayitListesi || kayitListesi.length === 0) return { gunlukDetay: {} };
 
@@ -3092,9 +3092,9 @@ function hesaplaFazlaMesaiGunleri(kayitListesi) {
       dakika = 450;
       tip = (haftaGunu === 0) ? 'pazar' : 'tatil';
     } else {
-      const sinir = new Date(gunBase); sinir.setHours(16, 30, 0, 0);
+      const sinir = new Date(gunBase); sinir.setHours(16, 45, 0, 0);
       if (enGecBitis && enGecBitis > sinir) {
-        dakika = 210; // SABİT 3s30d — orantılı değil
+        dakika = 180; // SABİT 3 saat — orantılı değil
         tip = 'normal';
       }
     }
@@ -3744,7 +3744,7 @@ async function gunlukEkAdetKaydetHandler(btn) {
 // ════════════════════════════════════════════════════════════════════════
 // Yönetmeliğe göre yıllık fazla mesai üst sınırı 270 saattir. Bu modül,
 // inspector'ların gün-bazlı fazla mesai kayıtlarını (bkz. yukarıdaki
-// hesaplaFazlaMesaiGunleri — 16:30 sonrası SABİT 3s30d, Pazar/resmi tatil
+// hesaplaFazlaMesaiGunleri — 16:45 sonrası SABİT 3 saat, Pazar/resmi tatil
 // SABİT 7s30d kuralı) sunucuda YIL BAZINDA kalıcı olarak biriktirir, böylece
 // Excel her değiştiğinde/yeniden yüklendiğinde geçmiş veriler KAYBOLMAZ.
 
@@ -7919,7 +7919,7 @@ function performansHesapla(){
     
     // Günlük mesai hesaplama
     const mesaiHesap = hesaplaGunlukMesaiSuresi(inspectorData.kayitListesi);
-    // Fazla Mesai Takip modülü için AYRI, SABİT kurallı hesaplama (16:30 sınırı,
+    // Fazla Mesai Takip modülü için AYRI, SABİT kurallı hesaplama (16:45 sınırı,
     // Pazar/resmi tatil tam gün) — bkz. hesaplaFazlaMesaiGunleri üstteki not.
     const fazlaMesaiHesap = hesaplaFazlaMesaiGunleri(inspectorData.kayitListesi);
     
