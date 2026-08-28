@@ -5297,6 +5297,22 @@ function showPerfSeviyeDetay(seviyeKey) {
     const _ekAdetP = _gunlukEkAdetAl(insp.ins);
     const ortMesaisiz = (_gunSayisiP > 0 ? Math.round(_normalAdetP / _gunSayisiP) : 0) + _ekAdetP;
     const ortMesaili   = (_gunSayisiP > 0 ? Math.round((insp.toplamAdetGercek ?? insp.adet ?? 0) / _gunSayisiP) : 0) + _ekAdetP;
+    // ── Teknik Skor & İkinci Insp (kullanıcı talebiyle eklendi) ──────────
+    // getEfektifPerfSeviye()'nin genel seviyeyi hesaplarken kullandığı AYNI
+    // iki kaynak fonksiyon — böylece burada gösterilen yüzdeler, genel
+    // "Performans" etiketinin hesabında kullanılan değerlerle BİREBİR aynı.
+    const _teknikNesne = (typeof getTeknikIncelemeSkorForInspector === 'function')
+      ? getTeknikIncelemeSkorForInspector(insp.ins) : null;
+    const _teknikDeger = (_teknikNesne && _teknikNesne.count > 0) ? _teknikNesne.percent : null;
+    const _ikinciNesne = (typeof getIkinciInspectionOraniForInspector === 'function')
+      ? getIkinciInspectionOraniForInspector(insp.ins) : null;
+    const _ikinciDeger = _ikinciNesne ? _ikinciNesne.percent : null;
+    const _metrikHucre = (deger, metrikKey) => {
+      if (deger === null || deger === undefined) return `<span style="color:var(--muted2)">—</span>`;
+      const _sev = (typeof _ceyrekMetrikSeviye === 'function') ? _ceyrekMetrikSeviye(deger, metrikKey) : null;
+      const _renk = _sev ? '#' + _sev.color : 'var(--navy)';
+      return `<span style="color:${_renk};font-weight:700" title="${_sev ? _sev.label : ''}">${deger}%</span>`;
+    };
     return `
       <tr style="border-bottom:1px solid var(--border2)">
         <td style="padding:9px 10px;font-weight:600;color:var(--navy);cursor:pointer" onclick="document.getElementById('perf-seviye-popup').style.display='none'; showInspectorDetail('${insp.ins.replace(/'/g, "\\'")}')">${_escapeHtml(_formatDisplayName(insp.ins))}</td>
@@ -5305,6 +5321,8 @@ function showPerfSeviyeDetay(seviyeKey) {
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${formatTR(ortMesaili)}</td>
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;color:var(--navy)">${formatTR((insp.toplamAdetGercek ?? insp.adet ?? 0))}</td>
         <td style="padding:9px 10px;text-align:center">${otHtml}</td>
+        <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace">${_metrikHucre(_teknikDeger, 'teknikSkor')}</td>
+        <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace">${_metrikHucre(_ikinciDeger, 'ikinciInsp')}</td>
         <td style="padding:9px 10px;text-align:center;font-family:'DM Mono',monospace;font-weight:700;color:${perfColor}" title="${perf}%">${_efektif.label}</td>
       </tr>`;
   }).join('');
@@ -5324,6 +5342,8 @@ function showPerfSeviyeDetay(seviyeKey) {
             <th style="padding:9px 10px;text-align:center;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Mesaili Günlük Ort.</th>
             <th style="padding:9px 10px;text-align:center;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Toplam Ürün</th>
             <th style="padding:9px 10px;text-align:center;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Overtime</th>
+            <th style="padding:9px 10px;text-align:center;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Teknik Skor</th>
+            <th style="padding:9px 10px;text-align:center;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">İkinci Insp</th>
             <th style="padding:9px 10px;text-align:center;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Performans</th>
           </tr>
         </thead>
