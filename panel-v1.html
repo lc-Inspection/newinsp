@@ -630,7 +630,7 @@
         <div id="ceyrek-esik-body" style="display:none">
           <div class="card-body">
             <p style="font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.7">
-              Her performans seviyesi için 3 metrikte aranan <strong>minimum</strong> değeri belirleyin. Her metrik önce kendi eşiğine göre bir seviyeye ve puana çevrilir (<strong>Fark Yaratan = 5</strong>, <strong>İyi = 4</strong>, <strong>Orta = 3</strong>, <strong>Gelişime Açık = 2</strong>, <strong>Zayıf = 1</strong> puan). Bir inspector'ın genel <strong>Performans</strong> durumu, elindeki verisi olan metrikler arasındaki <strong>EN DÜŞÜK (en zayıf)</strong> seviyedir — yani bir seviyeye (ör. Fark Yaratan) ulaşabilmek için <strong>TÜM</strong> metriklerde o seviyenin eşiği sağlanmalıdır, tek bir metrik bile altında kalırsa genel seviye o metriğin seviyesine düşer. Örn. Günlük Ort. Fark Yaratan (5) + Teknik Skor İyi (4) + İkinci Insp Orta (3) → en düşüğü Orta (3) → genel seviye <strong>Orta</strong>. Veri olmayan (\"—\") metrikler değerlendirmeye katılmaz. <strong>Zayıf</strong> satırı ayrıca girilmez — \"Gelişime Açık\" eşiğinin altındaki her değer otomatik olarak Zayıf (1 puan) sayılır.
+              Her performans seviyesi için 3 metrikte aranan <strong>minimum</strong> değeri belirleyin. Her metrik önce kendi eşiğine göre bir seviyeye ve puana çevrilir (<strong>Fark Yaratan = 5</strong>, <strong>İyi = 4</strong>, <strong>Orta = 3</strong>, <strong>Gelişime Açık = 2</strong>, <strong>Zayıf = 1</strong> puan). Bir inspector'ın genel <strong>Performans</strong> durumu, elindeki verisi olan metriklerin puanlarının <strong>aşağıdaki Ağırlık satırındaki yüzdelere göre</strong> AĞIRLIKLI ORTALAMASI alınıp şu skalaya göre belirlenir: <strong>≥4.50 Fark Yaratan</strong> · <strong>≥3.75 İyi</strong> · <strong>≥2.75 Orta</strong> · <strong>≥1.75 Gelişime Açık</strong> · <strong>&lt;1.75 Zayıf</strong> — örn. (varsayılan %50/%25/%25 ağırlıkla) Günlük Ort. Fark Yaratan (5) + Teknik Skor İyi (4) + İkinci Insp Orta (3) → (5×0.50)+(4×0.25)+(3×0.25) = 4.25 → İyi (3.75 ≤ 4.25 &lt; 4.50). Veri olmayan (\"—\") metrikler ortalamaya katılmaz, kalan metriklerin ağırlıkları kendi aralarında yeniden orantılanır. <strong>Zayıf</strong> satırı ayrıca girilmez — \"Gelişime Açık\" eşiğinin altındaki her değer otomatik olarak Zayıf (1 puan) sayılır. Ağırlık satırının toplamı her zaman <strong>%100</strong> olmalıdır.
             </p>
             <div style="overflow-x:auto">
               <table style="width:100%;border-collapse:collapse;min-width:520px">
@@ -648,6 +648,7 @@
             <div style="display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap">
               <button class="btn btn-primary" onclick="kaydetCeyrekEsikleri()" id="ceyrek-esik-save-btn">💾 Kaydet</button>
               <button class="btn" onclick="varsayilanaDonCeyrekEsikleri()" style="background:var(--lred);color:var(--red);border-color:#FFCDD2">↺ Varsayılana Dön</button>
+              <span id="ceyrek-agirlik-toplam" style="font-size:12px;font-weight:600"></span>
               <span id="ceyrek-esik-save-msg" style="font-size:12px;color:var(--green);display:none">✅ Kaydedildi! Tüm performans etiketleri bu kriterlere göre güncellendi.</span>
             </div>
           </div>
