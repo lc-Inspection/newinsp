@@ -1379,7 +1379,7 @@ async function aoGeneratePdfAndMail() {
     });
     if(ortalamaPuan!==null&&ortalamaPuan!==undefined){
       txt('#8FA6BF'); pdf.setFontSize(5.5); pdf.setFont('helvetica','normal');
-      pdf.text('Genel Degerlendirme: En Dusuk Metrik '+ortalamaPuan.toFixed(1)+'/5  ->  '+_tr(genelLabel).toUpperCase(), M, y3+24);
+      pdf.text('Genel Degerlendirme: Agirlikli Puan '+ortalamaPuan.toFixed(2)+'/5  ->  '+_tr(genelLabel).toUpperCase(), M, y3+24);
     }
 
     // ── 5 Özet Stat Kartı ─────────────────────────────────────────────────────
@@ -1567,7 +1567,7 @@ async function aoGeneratePdfAndMail() {
     var body=encodeURIComponent(
       'Merhaba,\n\n'+(insp.ins||'')+' performans raporu ekte sunulmustur.\n\n'+
       '-- OZET --\n'+
-      '  Genel Degerlendirme : '+_tr(genelLabel).toUpperCase()+(ortalamaPuan!==null?' (en dusuk metrik '+ortalamaPuan.toFixed(1)+'/5)':'')+'\n'+
+      '  Genel Degerlendirme : '+_tr(genelLabel).toUpperCase()+(ortalamaPuan!==null?' (agirlikli puan '+ortalamaPuan.toFixed(2)+'/5)':'')+'\n'+
       '    - Gunluk Ort. (Normal Saatte): '+((_efektifPdf&&_efektifPdf.gunlukOrtNormal!==null&&_efektifPdf.gunlukOrtNormal!==undefined)?fmtN(_efektifPdf.gunlukOrtNormal)+' adet':'--')+(seviyeAdet?' - '+_tr(seviyeAdet.label):'')+'\n'+
       '    - Ikinci Inspection    : '+(iiPercent!==null?'%'+iiPercent:'Veri Yok')+(seviyeIkinci?' - '+_tr(seviyeIkinci.label):'')+'\n'+
       '    - Teknik Inceleme      : '+(tiPercent!==null?'%'+tiPercent:'Veri Yok')+(seviyeTeknik?' - '+_tr(seviyeTeknik.label):'')+'\n'+
