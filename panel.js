@@ -573,6 +573,11 @@ let ceyrekArsivi = {};
 // varsayılanlar kullanıcının verdiği tabloyla birebir aynıdır. "Zayıf"
 // seviyesi ayrı bir alan değildir — "acik" (Gelişime Açık) eşiğinin altı
 // otomatik olarak Zayıf sayılır.
+// (GÜNCELLEME — kullanıcı talebiyle) Bir inspector'ın bir seviyeye (ör.
+// Fark Yaratan) ulaşabilmesi için elindeki TÜM metriklerin (veri
+// olanların) bu tablodaki eşiği sağlaması gerekir — tek bir metrik bile
+// altında kalırsa genel seviye o metriğin seviyesine düşer ("en zayıf
+// halka" kuralı; artık aritmetik ortalama KULLANILMIYOR). Bkz. _ceyrekGenelSeviye().
 const CEYREK_ESIK_VARSAYILAN = {
   gunlukOrt:  { farkYaratan: 450, iyi: 400, orta: 360, acik: 300 },
   teknikSkor: { farkYaratan: 95,  iyi: 90,  orta: 85,  acik: 75  },
@@ -3333,13 +3338,15 @@ function getPerformanceLevelLabel(performans) {
 // her metrik (Günlük Ort., Teknik Skor, İkinci Insp) önce kendi eşiğine
 // (bkz. "⚖️ Performans Kriterleri" paneli / ceyrekEsikleri) göre bir puana
 // çevrilir (Fark Yaratan=5, İyi=4, Orta=3, Gelişime Açık=2, Zayıf=1),
-// sonra veri bulunan metriklerin puanlarının ARİTMETİK ORTALAMASI alınıp
-// en yakın tam sayıya yuvarlanır — bkz. _ceyrekGenelSeviye(). Veri olmayan
-// ("—") metrikler ortalamaya katılmaz; Günlük Ort. her zaman hesaplanabilir
+// sonra genel seviye bu puanların ORTALAMASI DEĞİL, veri bulunan
+// metrikler arasındaki EN DÜŞÜK (en kötü) seviyedir — bkz.
+// _ceyrekGenelSeviye(). Yani bir inspector bir seviyeye ulaşmak için
+// TÜM metriklerde o seviyenin eşiğini sağlamalıdır. Veri olmayan ("—")
+// metrikler değerlendirmeye katılmaz; Günlük Ort. her zaman hesaplanabilir
 // olduğu için en az bu metrik her zaman değerlendirmeye girer.
 // "adetBazliPerf" (gösterilen PERFORMANS %) formülü DEĞİŞMEDİ, hâlâ Mesaisiz
 // Günlük Ort. ÷ Günlük Hedef Adet × 100 — sadece hangi renkli kutuya/
-// kategoriye gireceği artık TEK bir metriğe değil üçünün ortalamasına göre
+// kategoriye gireceği artık TEK bir metriğe değil üçünün en zayıfına göre
 // belirleniyor.
 // Bu TEK fonksiyon uygulama genelinde (Dashboard kartları, üstteki özet
 // sayaçlar, performans seviyesi popup'ları, Detaylı Analiz sayfası —
@@ -3392,7 +3399,7 @@ function getEfektifPerfSeviye(inspector, performansVal) {
     else if (gunlukOrtNormal >= 360) { cls = 'perf-average'; label = t.perf_average; }
     else if (gunlukOrtNormal >= 300) { cls = 'perf-weak'; label = t.perf_weak; }
     else { cls = 'perf-verypoor'; label = t.perf_verypoor; }
-    farkYaratan = gunlukOrtNormal > 450;
+    farkYaratan = gunlukOrtNormal >= 450;
     if (farkYaratan) { cls = 'perf-farkyaratan'; label = t.perf_farkyaratan; }
   }
 
@@ -4422,15 +4429,15 @@ function _ceyrekMetrikHucre(veri) {
   const renk = (v, tersMi) => v === null || v === undefined ? 'var(--muted2)'
     : (v >= 85 ? '#00897B' : v >= 70 ? '#F57F17' : v >= 50 ? '#EF5350' : '#B71C1C');
   // Performans (eski adıyla Verimlilik) artık TEK metriğe değil, 3 metriğin
-  // (Günlük Ort./Teknik Skor/İkinci Insp) puanlarının ARİTMETİK ORTALAMASINA
-  // göre belirleniyor (Fark Yaratan=5, İyi=4, Orta=3, Gelişime Açık=2,
-  // Zayıf=1 puan) — bkz. _ceyrekGenelSeviye() ve sayfa üstündeki "⚖️
-  // Performans Kriterleri (Ağırlıklar)" paneli. Fareyle üzerine gelince
-  // hangi metriğin kaç puan verdiği ve ortalama puan tooltip'te görünür.
+  // (Günlük Ort./Teknik Skor/İkinci Insp) HEPSİNİN BİRDEN o seviyenin
+  // eşiğini sağlamasına göre belirleniyor ("en zayıf halka" kuralı — bkz.
+  // _ceyrekGenelSeviye() ve sayfa üstündeki "⚖️ Performans Kriterleri
+  // (Ağırlıklar)" paneli). Fareyle üzerine gelince hangi metriğin kaç puan
+  // verdiği ve genel seviyeyi belirleyen en düşük puan tooltip'te görünür.
   const pSeviye = typeof _ceyrekGenelSeviye === 'function' ? _ceyrekGenelSeviye(veri) : null;
   const pMetin = pSeviye ? pSeviye.label : '—';
   const pRenk  = pSeviye ? '#' + pSeviye.color : 'var(--muted2)';
-  const pTitle = pSeviye ? ` title="${pSeviye.detay || ''} · Ortalama: ${pSeviye.ortalamaPuan.toFixed(1)} puan"` : '';
+  const pTitle = pSeviye ? ` title="${pSeviye.detay || ''} · En düşük metrik: ${pSeviye.ortalamaPuan} puan (genel seviyeyi bu belirler)"` : '';
   // Bu hücre "📤 Çeyrek Verisi Gönder" butonuna en son basıldığı ANDAKİ bir
   // ANLIK GÖRÜNTÜdür (canlı hesaplanmaz) — kullanıcı talebiyle: yeni
   // İkinci Inspection/Teknik İnceleme kaydı eklense bile, bu kutu tekrar
@@ -4445,7 +4452,7 @@ function _ceyrekMetrikHucre(veri) {
       sonGuncellemeNot = `<div style="font-size:10px;color:var(--muted2);margin-top:2px">📤 Anlık görüntü: ${str}</div>`;
     }
   }
-  const pPuanEtiket = pSeviye ? ` <span style="font-size:11px;color:var(--muted2);font-weight:400">(${pSeviye.ortalamaPuan.toFixed(1)}/5)</span>` : '';
+  const pPuanEtiket = pSeviye ? ` <span style="font-size:11px;color:var(--muted2);font-weight:400">(${pSeviye.ortalamaPuan}/5)</span>` : '';
   return `
     <div style="font-size:12px;line-height:2">
       <div><span style="color:var(--muted)">Performans:</span> <strong style="font-size:14px;color:${pRenk}"${pTitle}>${pMetin}</strong>${pPuanEtiket}</div>
@@ -4680,9 +4687,9 @@ function _ceyrekKpiSayfaZeminiYaz(ws, satirSayisi, kolonSayisi) {
 
 // Seviye meta bilgisi. "sira" = puanlama sistemindeki KARŞILIĞI (1-5) —
 // kullanıcı talebiyle: Fark Yaratan=5, İyi=4, Orta=3, Gelişime Açık=2,
-// Zayıf=1 puan. Genel Performans, veri bulunan metriklerin puanlarının
-// ARİTMETİK ORTALAMASI alınıp aşağıdaki (kullanıcının verdiği) skalaya göre
-// bir seviyeye eşlenerek belirlenir.
+// Zayıf=1 puan. Genel Performans, veri bulunan metrikler arasındaki EN
+// DÜŞÜK (en kötü) seviyedir — bir inspector bir seviyeye ulaşmak için
+// TÜM metriklerde o seviyenin eşiğini sağlamalıdır (bkz. _ceyrekGenelSeviye()).
 const CEYREK_SEVIYE_META = {
   farkyaratan: { key: 'farkyaratan', label: 'Fark Yaratan',  color: '00ACC1', bg: 'E1F5FE', sira: 5 },
   iyi:         { key: 'iyi',         label: 'İyi',           color: '2563EB', bg: 'E3F2FD', sira: 4 },
@@ -4691,29 +4698,19 @@ const CEYREK_SEVIYE_META = {
   zayif:       { key: 'zayif',       label: 'Zayıf',         color: 'B71C1C', bg: 'FFEBEE', sira: 1 }
 };
 
-// Ortalama puan → genel seviye skalası (kullanıcı talebiyle güncellendi —
-// artık en yakın tam sayıya yuvarlama YOK, doğrudan aralık eşiklerine göre
-// belirleniyor):
-//   Fark Yaratan : ortalama ≥ 4.50
-//   İyi          : ortalama ≥ 3.75  (< 4.50)
-//   Orta         : ortalama ≥ 2.75  (< 3.75)
-//   Gelişime Açık: ortalama ≥ 1.75  (< 2.75)
-//   Zayıf        : ortalama <  1.75
-function _ceyrekPuanToSeviye(puan) {
-  if (puan >= 4.5)  return CEYREK_SEVIYE_META.farkyaratan;
-  if (puan >= 3.75) return CEYREK_SEVIYE_META.iyi;
-  if (puan >= 2.75) return CEYREK_SEVIYE_META.orta;
-  if (puan >= 1.75) return CEYREK_SEVIYE_META.acik;
-  return CEYREK_SEVIYE_META.zayif;
-}
-
 // Tek bir metrik değerini (ör. Teknik Skor: 94), o metriğin kayıtlı
 // eşiklerine (ceyrekEsikleri[metrikKey]) göre bir seviyeye çevirir.
 function _ceyrekMetrikSeviye(deger, metrikKey) {
   if (deger === null || deger === undefined) return null;
   const esik = ceyrekEsikleri[metrikKey];
   if (!esik) return null;
-  if (deger > esik.farkYaratan) return CEYREK_SEVIYE_META.farkyaratan;
+  // NOT (düzeltildi): önceden burada "> esik.farkYaratan" (KESİNLİKLE BÜYÜK)
+  // kontrolü vardı — yani tabloda "450" yazsa bile tam 450'ye sahip biri
+  // Fark Yaratan SAYILMIYOR, bir alt seviyeye (İyi) düşüyordu. Kullanıcının
+  // "450/95/95 OLMALI" ifadesiyle (yani bu değere ULAŞMAK yeterli olmalı)
+  // çelişiyordu — ">=" yapıldı, artık tabloda yazan değerin TAM KARŞILIĞI
+  // da o seviyeyi hak ediyor.
+  if (deger >= esik.farkYaratan) return CEYREK_SEVIYE_META.farkyaratan;
   if (deger >= esik.iyi)        return CEYREK_SEVIYE_META.iyi;
   if (deger >= esik.orta)       return CEYREK_SEVIYE_META.orta;
   if (deger >= esik.acik)       return CEYREK_SEVIYE_META.acik;
@@ -4722,14 +4719,18 @@ function _ceyrekMetrikSeviye(deger, metrikKey) {
 
 const CEYREK_METRIK_ADI = { gunlukOrt: 'Günlük Ort.', teknikSkor: 'Teknik Skor', ikinciInsp: 'İkinci Insp' };
 
+// (GÜNCELLEME — kullanıcı talebiyle: ORTALAMA yerine "EN ZAYIF HALKA" kuralı)
 // Bir çeyrek kaydının (gunlukOrtNormal/teknikSkor/ikinciInsp) GENEL
-// "Performans" seviyesini döner — her metrik önce kendi eşiğine göre bir
+// "Performans" seviyesini döner. Her metrik önce kendi eşiğine göre bir
 // seviyeye (Fark Yaratan=5 / İyi=4 / Orta=3 / Gelişime Açık=2 / Zayıf=1
-// puan) çevrilir, sonra veri bulunan metriklerin puanlarının ARİTMETİK
-// ORTALAMASI alınıp _ceyrekPuanToSeviye() skalasına göre genel seviye
-// belirlenir. Örnek: Günlük Ort. Fark Yaratan (5) + İkinci Insp Orta (3)
-// → ortalama 4.0 → İyi (3.75 ≤ 4.0 < 4.5). Veri olmayan ("—") metrikler
-// ortalamaya katılmaz.
+// puan) çevrilir. Genel seviye artık bu puanların ortalaması DEĞİL, VERİSİ
+// OLAN metrikler arasındaki EN DÜŞÜK (en kötü) seviyedir — yani bir
+// inspector bir seviyeye (ör. Fark Yaratan) ulaşabilmek için elindeki
+// TÜM metriklerde o seviyenin eşiğini sağlamalıdır; tek bir metrik bile
+// altında kalırsa genel seviye o metriğin seviyesine düşer.
+// Örnek: Günlük Ort. Fark Yaratan (5) + Teknik Skor İyi (4) + İkinci Insp
+// Orta (3) → en düşüğü Orta (3) → genel seviye Orta. Veri olmayan ("—")
+// metrikler değerlendirmeye katılmaz.
 function _ceyrekGenelSeviye(veri) {
   if (!veri) return null;
   const adaylar = [
@@ -4738,12 +4739,13 @@ function _ceyrekGenelSeviye(veri) {
     { metrik: 'ikinciInsp', seviye: _ceyrekMetrikSeviye(veri.ikinciInsp, 'ikinciInsp') }
   ].filter(a => a.seviye);
   if (!adaylar.length) return null;
-  const toplamPuan = adaylar.reduce((s, a) => s + a.seviye.sira, 0);
-  const ortalamaPuan = toplamPuan / adaylar.length;
-  const sonuc = _ceyrekPuanToSeviye(ortalamaPuan);
+  // En düşük puanlı (en zayıf) adayı bul — genel seviye budur.
+  const enZayif = adaylar.reduce((min, a) => a.seviye.sira < min.seviye.sira ? a : min, adaylar[0]);
+  const sonuc = enZayif.seviye;
+  const enDusukPuan = sonuc.sira;
   // detay: hangi metriğin kaç puan verdiği — tooltip'te gösterilir
   const detay = adaylar.map(a => `${CEYREK_METRIK_ADI[a.metrik]}: ${a.seviye.label} (${a.seviye.sira})`).join(' · ');
-  return { ...sonuc, ortalamaPuan, detay };
+  return { ...sonuc, ortalamaPuan: enDusukPuan, detay };
 }
 
 function _ceyrekReferansSeviye(kayit) {
