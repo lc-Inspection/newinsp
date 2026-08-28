@@ -239,12 +239,12 @@ function _aoRenderStats() {
 
   function perfColor(p){ return p >= 95 ? '#00897B' : p >= 85 ? '#1565C0' : p >= 70 ? '#F57F17' : p >= 50 ? '#EF5350' : '#B71C1C'; }
 
-  // ÖNEMLİ: Seviye etiketi (İyi/Orta/Gelişime Açık/Zayıf) artık panelin HER
+  // ÖNEMLİ: Seviye etiketi (İyi/Düşük/Gelişime Açık/Zayıf) artık panelin HER
   // YERİNDE (Dashboard kartı, Ekibim, Ekip Yöneticileri) kullanılan TEK
-  // doğru kaynaktan — getEfektifPerfSeviye (Mesaisiz Günlük Ort. ÷ 450/gün
-  // hedef) — geliyor. Eskiden burada ayrı/farklı bir % eşiği (getPerformanceLevelLabel,
+  // doğru kaynaktan — getEfektifPerfSeviye (3 metriğin ağırlıklı ortalaması)
+  // — geliyor. Eskiden burada ayrı/farklı bir % eşiği (getPerformanceLevelLabel,
   // ≥85/≥70/≥50) kullanılıyordu ve bu da aynı kişi için Dashboard'da "İyi"
-  // görünürken burada "Orta" gibi FARKLI bir seviye göstermesine yol
+  // görünürken burada "Düşük" gibi FARKLI bir seviye göstermesine yol
   // açıyordu. duzPerf hâlâ hesaplanıyor ama sadece referans/tooltip amaçlı.
   var _efektifAo = (typeof getEfektifPerfSeviye === 'function')
     ? getEfektifPerfSeviye(_aoInspector, _aoInspector.genelHizPerf || 0)
@@ -1106,11 +1106,11 @@ async function aoGeneratePdfAndMail() {
     var data      = _aoData || [];
     var hedef     = _aoHedef || 100;
 
-    // YENİ SİSTEM: Genel performans kategorisi (Fark Yaratan/İyi/Orta/
+    // YENİ SİSTEM: Genel performans kategorisi (Fark Yaratan/İyi/Düşük/
     // Gelişime Açık/Zayıf) artık TEK bir hız oranından değil, ÜÇ metriğin
     // (Günlük Ort. Adet · İkinci Inspection · Teknik İnceleme Skoru)
-    // ortalamasından geliyor — panel.js'teki getEfektifPerfSeviye() ile
-    // BİREBİR aynı fonksiyon çağrılıyor, böylece PDF ile panel HER ZAMAN
+    // AĞIRLIKLI ORTALAMASINDAN geliyor — panel.js'teki getEfektifPerfSeviye()
+    // ile BİREBİR aynı fonksiyon çağrılıyor, böylece PDF ile panel HER ZAMAN
     // aynı sonucu gösterir.
     var _efektifPdf = (typeof getEfektifPerfSeviye === 'function')
       ? getEfektifPerfSeviye(insp, insp.genelHizPerf || 0) : null;
