@@ -8725,30 +8725,38 @@ const TEKNIK_SKORLAR_RAW_KOLONLAR = [
 
 // "tarih" sütunu veritabanından DD.MM.YYYY veya DD.MM.YYYY SS:dd:ss biçiminde
 // geliyor (örn. "10.08.2026" ya da "10.08.2026 03:00:56", gün/ay tek haneli
-// de olabilir). JS'in yerleşik `new Date(...)` çözümleyicisi NOKTA ile
-// ayrılmış bu Türkçe/Avrupa biçimini GÜVENİLİR şekilde çözemez (tarayıcıya
-// göre değişir, çoğunlukla Invalid Date döner) — bu yüzden önce elle regex
-// ile ayrıştırılıyor. Sonuç, Excel'de GERÇEK bir tarih hücresi olarak
-// yazılabilsin diye bir JS Date nesnesi olarak döner; hücrenin Excel'de
-// TAM OLARAK "YYYY-MM-DD" biçiminde görünmesi ise _disaAktarHamTablo
-// içinde uygulanan açık hücre biçimiyle (z: 'yyyy-mm-dd') sağlanır.
+// de olabilir). SONUÇ, "id" sütununda yaptığımızla AYNI mantıkla, bir JS
+// Date nesnesi DEĞİL, doğrudan "YYYY-MM-DD" biçiminde bir METİN olarak
+// döner. Neden: önceki denemede tarihi Date nesnesi + hücre biçimi (z:
+// 'yyyy-mm-dd') olarak yazmıştık, ama gerçek export dosyalarını inceleyince
+// bu projede kullanılan XLSX kütüphanesi sürümünün özel hücre biçimini
+// YOK SAYIP kendi varsayılan tarih biçimine ("mm-dd-yy") döndüğü görüldü.
+// Metin olarak yazmak, kütüphanenin biçimlendirme davranışına hiç bağımlı
+// olmadan HER KOŞULDA istenen "YYYY-MM-DD" görünümünü garanti eder.
 function _rawExportTarihCevir(v) {
   if (v === null || v === undefined || v === '') return v;
   const s = String(v).trim();
+  const p = n => String(n).padStart(2, '0');
 
-  // 1) "GG.AA.YYYY" veya "GG.AA.YYYY SS:dd:ss" (gün/ay 1-2 haneli)
-  const m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  // 1) "GG.AA.YYYY" veya "GG.AA.YYYY SS:dd:ss" (gün/ay 1-2 haneli) — saat
+  //    kısmı İSTENEN ÇIKTIDA yok, bu yüzden sadece tarih kısmı alınır.
+  const m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?$/);
   if (m) {
     const gun = Number(m[1]), ay = Number(m[2]), yil = Number(m[3]);
-    const saat = Number(m[4] || 0), dk = Number(m[5] || 0), sn = Number(m[6] || 0);
-    const d = new Date(yil, ay - 1, gun, saat, dk, sn);
-    return isNaN(d.getTime()) ? v : d;
+    return `${yil}-${p(ay)}-${p(gun)}`;
   }
 
-  // 2) Yukarıdaki kalıba uymuyorsa (zaten ISO "YYYY-MM-DD..." vb. olabilir)
-  //    standart Date ayrıştırmasına düş.
-  const d2 = new Date(s);
-  return isNaN(d2.getTime()) ? v : d2;
+  // 2) Zaten ISO ("YYYY-MM-DD" veya "YYYY-MM-DDTHH:MM:SS..." gibi) ise,
+  //    sadece baştaki tarih kısmını al (saat varsa at).
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  // 3) Yukarıdakilerin hiçbirine uymuyorsa son çare olarak Date ile dene.
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+
+  // Hiçbiri işe yaramazsa (bozuk/anlaşılamayan bir değer), olduğu gibi bırak.
+  return v;
 }
 
 // "id" sütunu büyük sayılar içeriyor (13-16 haneli). Sayı olarak yazılırsa
@@ -8791,19 +8799,6 @@ async function _disaAktarHamTablo(action, kolonlar, dosyaAdiOnEki, btnId) {
       }));
     });
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    // "tarih" sütunundaki hücrelere AÇIK bir tarih biçimi uygulanıyor —
-    // aksi halde Excel, JS Date nesnesini kullanıcının Windows/Excel yerel
-    // ayarına göre (örn. GG.AA.YYYY) gösterebilir; biz her koşulda tam
-    // olarak "YYYY-MM-DD" görünmesini istiyoruz.
-    const tarihKolIdx = kolonlar.indexOf('tarih');
-    if (tarihKolIdx !== -1) {
-      for (let r = 1; r < aoa.length; r++) {
-        const cellRef = XLSX.utils.encode_cell({ r, c: tarihKolIdx });
-        if (ws[cellRef] && ws[cellRef].t === 'd') {
-          ws[cellRef].z = 'yyyy-mm-dd';
-        }
-      }
-    }
     const wb = XLSX.utils.book_new();
     // Sheet adı referans dosyalarla BİREBİR aynı: "Sayfa1".
     XLSX.utils.book_append_sheet(wb, ws, 'Sayfa1');
