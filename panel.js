@@ -8723,14 +8723,44 @@ const TEKNIK_SKORLAR_RAW_KOLONLAR = [
   'skor_yuzde', 'madde_sayisi', 'tikli_sayisi', 'cevaplar_json', 'saved_at'
 ];
 
-// "tarih" (YYYY-MM-DD) sütununu, referans dosyadaki gibi GERÇEK bir Excel
-// tarihi olarak yazabilmek için JS Date nesnesine çevirir — bu sayede Excel
-// hücreyi metin değil tarih olarak tanır. Parse edilemezse (boş/bozuk)
-// olduğu gibi (ham metin) bırakılır.
+// "tarih" sütunu veritabanından DD.MM.YYYY veya DD.MM.YYYY SS:dd:ss biçiminde
+// geliyor (örn. "10.08.2026" ya da "10.08.2026 03:00:56", gün/ay tek haneli
+// de olabilir). JS'in yerleşik `new Date(...)` çözümleyicisi NOKTA ile
+// ayrılmış bu Türkçe/Avrupa biçimini GÜVENİLİR şekilde çözemez (tarayıcıya
+// göre değişir, çoğunlukla Invalid Date döner) — bu yüzden önce elle regex
+// ile ayrıştırılıyor. Sonuç, Excel'de GERÇEK bir tarih hücresi olarak
+// yazılabilsin diye bir JS Date nesnesi olarak döner; hücrenin Excel'de
+// TAM OLARAK "YYYY-MM-DD" biçiminde görünmesi ise _disaAktarHamTablo
+// içinde uygulanan açık hücre biçimiyle (z: 'yyyy-mm-dd') sağlanır.
 function _rawExportTarihCevir(v) {
   if (v === null || v === undefined || v === '') return v;
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? v : d;
+  const s = String(v).trim();
+
+  // 1) "GG.AA.YYYY" veya "GG.AA.YYYY SS:dd:ss" (gün/ay 1-2 haneli)
+  const m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (m) {
+    const gun = Number(m[1]), ay = Number(m[2]), yil = Number(m[3]);
+    const saat = Number(m[4] || 0), dk = Number(m[5] || 0), sn = Number(m[6] || 0);
+    const d = new Date(yil, ay - 1, gun, saat, dk, sn);
+    return isNaN(d.getTime()) ? v : d;
+  }
+
+  // 2) Yukarıdaki kalıba uymuyorsa (zaten ISO "YYYY-MM-DD..." vb. olabilir)
+  //    standart Date ayrıştırmasına düş.
+  const d2 = new Date(s);
+  return isNaN(d2.getTime()) ? v : d2;
+}
+
+// "id" sütunu büyük sayılar içeriyor (13-16 haneli). Sayı olarak yazılırsa
+// Excel bunu OTOMATİK olarak bilimsel gösterime çevirir (örn. "1,79E+12") —
+// çünkü Excel'in varsayılan "Genel" hücre biçimi belli bir haneden sonra
+// buna geçer. Çözüm: id'yi SAYI değil METİN (string) olarak yazmak — bu
+// sayede Excel hiçbir biçimlendirme uygulamaz, değer her zaman TAM HALİYLE
+// (örn. "1788005195917") görünür, ayrıca büyük sayılarda olası ondalık
+// hassasiyet kaybı riski de tamamen ortadan kalkar.
+function _rawExportIdCevir(v) {
+  if (v === null || v === undefined || v === '') return v;
+  return String(v);
 }
 
 async function _disaAktarHamTablo(action, kolonlar, dosyaAdiOnEki, btnId) {
@@ -8755,10 +8785,25 @@ async function _disaAktarHamTablo(action, kolonlar, dosyaAdiOnEki, btnId) {
     satirlar.forEach(r => {
       aoa.push(kolonlar.map(k => {
         const v = (r[k] === undefined) ? null : r[k];
-        return k === 'tarih' ? _rawExportTarihCevir(v) : v;
+        if (k === 'tarih') return _rawExportTarihCevir(v);
+        if (k === 'id') return _rawExportIdCevir(v);
+        return v;
       }));
     });
     const ws = XLSX.utils.aoa_to_sheet(aoa);
+    // "tarih" sütunundaki hücrelere AÇIK bir tarih biçimi uygulanıyor —
+    // aksi halde Excel, JS Date nesnesini kullanıcının Windows/Excel yerel
+    // ayarına göre (örn. GG.AA.YYYY) gösterebilir; biz her koşulda tam
+    // olarak "YYYY-MM-DD" görünmesini istiyoruz.
+    const tarihKolIdx = kolonlar.indexOf('tarih');
+    if (tarihKolIdx !== -1) {
+      for (let r = 1; r < aoa.length; r++) {
+        const cellRef = XLSX.utils.encode_cell({ r, c: tarihKolIdx });
+        if (ws[cellRef] && ws[cellRef].t === 'd') {
+          ws[cellRef].z = 'yyyy-mm-dd';
+        }
+      }
+    }
     const wb = XLSX.utils.book_new();
     // Sheet adı referans dosyalarla BİREBİR aynı: "Sayfa1".
     XLSX.utils.book_append_sheet(wb, ws, 'Sayfa1');
