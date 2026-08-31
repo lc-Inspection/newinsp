@@ -4797,14 +4797,24 @@ const CEYREK_METRIK_ADI = { gunlukOrt: 'Günlük Ort.', teknikSkor: 'Teknik Skor
 // Bir çeyrek kaydının (gunlukOrtNormal/teknikSkor/ikinciInsp) GENEL
 // "Performans" seviyesini döner. Her metrik önce kendi eşiğine göre bir
 // seviyeye (Fark Yaratan=5 / İyi=4 / Düşük=3 / Gelişime Açık=2 / Zayıf=1
-// puan) çevrilir, sonra veri bulunan metriklerin puanlarının
-// ceyrekAgirliklari'ndaki yüzdelere göre AĞIRLIKLI ORTALAMASI alınıp
-// _ceyrekPuanToSeviye() skalasına göre genel seviye belirlenir. Adet
-// (Günlük Ort.) varsayılan olarak en yüksek ağırlığa sahiptir, Teknik
-// Skor ve İkinci Insp daha düşük ama yine de belirleyici birer ağırlıkla
-// katılır. Veri olmayan ("—") metrikler tamamen çıkarılır; kalan
-// metriklerin ağırlıkları yeniden orantılanır (toplam ağırlık her zaman
-// %100'e tamamlanır).
+// puan) çevrilir.
+//
+// ⚠️ "FARK YARATAN" KURALI (kullanıcı talebiyle — ARTIK KARIŞTIRILMIYOR):
+// Genel seviyenin "Fark Yaratan" olabilmesi için, verisi bulunan HER
+// metriğin (Günlük Ort., Teknik Skor, İkinci Insp) TEK TEK KENDİ "Fark
+// Yaratan" eşiğini (bkz. ceyrekEsikleri.*.farkYaratan — ör. 450 adet /
+// %95 / %95) ayrı ayrı karşılaması gerekir. Örn. Günlük Ort. çok yüksek
+// olup Teknik Skor veya İkinci Insp bunun altındaysa, ağırlıklı ortalama
+// yüksek çıksa bile GENEL seviye "Fark Yaratan" OLAMAZ — bu tek durumda
+// metrikler birbirine karıştırılmaz/harmanlanmaz.
+//
+// Diğer TÜM seviyeler (İyi/Düşük/Gelişime Açık/Zayıf) eskisi gibi, veri
+// bulunan metriklerin puanlarının ceyrekAgirliklari'ndaki yüzdelere göre
+// AĞIRLIKLI ORTALAMASI alınıp _ceyrekPuanToSeviye() skalasına göre
+// belirlenir (bu skalada üst sınır artık "İyi" ile sınırlıdır — ağırlıklı
+// ortalama yoluyla asla "Fark Yaratan"a ulaşılamaz). Veri olmayan ("—")
+// metrikler tamamen çıkarılır; kalan metriklerin ağırlıkları yeniden
+// orantılanır (toplam ağırlık her zaman %100'e tamamlanır).
 // Örnek (varsayılan ağırlıklarla, %50/%25/%25): Günlük Ort. Fark Yaratan (5)
 // + Teknik Skor İyi (4) + İkinci Insp Düşük (3)
 // → (5×0.50)+(4×0.25)+(3×0.25) = 4.25 → İyi (3.75 ≤ 4.25 < 4.50).
@@ -4817,13 +4827,25 @@ function _ceyrekGenelSeviye(veri) {
   ].filter(a => a.seviye);
   if (!adaylar.length) return null;
 
+  const detay = adaylar.map(a => `${CEYREK_METRIK_ADI[a.metrik]}: ${a.seviye.label} (${a.seviye.sira}×%${a.agirlik})`).join(' · ');
+
+  // ── "Fark Yaratan" — KARIŞTIRMADAN, her metrik ayrı ayrı kontrol edilir ──
+  const hepsiFarkYaratan = adaylar.every(a => a.seviye.key === 'farkyaratan');
+  if (hepsiFarkYaratan) {
+    return { ...CEYREK_SEVIYE_META.farkyaratan, ortalamaPuan: 5, detay };
+  }
+
+  // ── Diğer seviyeler — eskisi gibi ağırlıklı ortalama ──
   const toplamAgirlik = adaylar.reduce((s, a) => s + a.agirlik, 0);
   const agirlikliPuan = toplamAgirlik > 0
     ? adaylar.reduce((s, a) => s + a.seviye.sira * a.agirlik, 0) / toplamAgirlik
     : adaylar.reduce((s, a) => s + a.seviye.sira, 0) / adaylar.length;
 
-  const sonuc = _ceyrekPuanToSeviye(agirlikliPuan);
-  const detay = adaylar.map(a => `${CEYREK_METRIK_ADI[a.metrik]}: ${a.seviye.label} (${a.seviye.sira}×%${a.agirlik})`).join(' · ');
+  // Yukarıdaki kural gereği ağırlıklı ortalama yoluyla ASLA "Fark
+  // Yaratan"a ulaşılamaz — puan 4.50'yi geçse bile (ör. bir metrik
+  // eksikken diğer ikisi çok yüksekse) üst sınır "İyi" ile sabitlenir.
+  const sinirliPuan = Math.min(agirlikliPuan, 4.49);
+  const sonuc = _ceyrekPuanToSeviye(sinirliPuan);
   return { ...sonuc, ortalamaPuan: agirlikliPuan, detay };
 }
 
