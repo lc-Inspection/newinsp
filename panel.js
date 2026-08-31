@@ -4764,13 +4764,13 @@ const CEYREK_SEVIYE_META = {
 };
 
 // Ağırlıklı puan → genel seviye skalası:
-//   Fark Yaratan : puan ≥ 4.50
-//   İyi          : puan ≥ 3.75  (< 4.50)
+//   Fark Yaratan : puan ≥ 4.68  (kullanıcı talebiyle 4.50'den revize edildi)
+//   İyi          : puan ≥ 3.75  (< 4.68)
 //   Düşük        : puan ≥ 2.75  (< 3.75)
 //   Gelişime Açık: puan ≥ 1.75  (< 2.75)
 //   Zayıf        : puan <  1.75
 function _ceyrekPuanToSeviye(puan) {
-  if (puan >= 4.5)  return CEYREK_SEVIYE_META.farkyaratan;
+  if (puan >= 4.68) return CEYREK_SEVIYE_META.farkyaratan;
   if (puan >= 3.75) return CEYREK_SEVIYE_META.iyi;
   if (puan >= 2.75) return CEYREK_SEVIYE_META.orta;
   if (puan >= 1.75) return CEYREK_SEVIYE_META.acik;
